@@ -23,8 +23,10 @@ def average_subsample(arr: np.ndarray) -> np.ndarray:
 
 @njit
 def average_subsample_jit(arr: np.ndarray) -> np.ndarray:
-    dom = np.copy(arr).reshape(-1).reshape((-1, arr.shape[1] * 2))
-    x = dom[:,:arr.shape[1]] + dom[:,arr.shape[1]:]
-    x = x[:,::2] + x[:,1::2]
-    return x / 4
+    res = np.empty((arr.shape[0] // 2, arr.shape[1] // 2), dtype=np.float32)
+    for i in range(0, arr.shape[0], 2):
+        for j in range(0, arr.shape[1], 2):
+            s = np.float32(arr[i, j]) + np.float32(arr[i, j + 1]) + np.float32(arr[i + 1, j]) + np.float32(arr[i + 1, j + 1])
+            res[i // 2, j // 2] = s / 4.
+    return res
     

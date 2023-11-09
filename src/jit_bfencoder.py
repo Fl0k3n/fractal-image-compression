@@ -75,6 +75,21 @@ def _calc_rms_error(domain: np.ndarray, range_: np.ndarray,
     else:
         s = (n * ab_sum - range_sum * domain_sum) / denominator
         o = 1. / n * (range_sum - s * domain_sum)
-    R =  1. / n * (squared_range_sum + s * (s * squared_domain_sum - 2 * ab_sum + 2 * o * domain_sum) + o * (n * o - 2 * range_sum))
-    # no reason to take sqrt
-    return R, s, o
+
+    if s < -1 or s > 1:
+        s = -1.
+        o_left = 1. / n * (range_sum - s * domain_sum)
+        R_left = _calc_R_error(n, squared_range_sum, s, squared_domain_sum, ab_sum, o_left, domain_sum, range_sum)
+        s = 1
+        o = 1. / n * (range_sum - s * domain_sum)
+        R_right = _calc_R_error(n, squared_range_sum, s, squared_domain_sum, ab_sum, o, domain_sum, range_sum)
+        if R_right < R_left:
+            return R_right, s, o
+        return R_left, -1., o_left
+    else:
+        R = _calc_R_error(n, squared_range_sum, s, squared_domain_sum, ab_sum, o, domain_sum, range_sum)
+        return R, s, o
+
+@njit
+def _calc_R_error(n, squared_range_sum, s, squared_domain_sum, ab_sum, o, domain_sum, range_sum):
+    return  1. / n * (squared_range_sum + s * (s * squared_domain_sum - 2 * ab_sum + 2 * o * domain_sum) + o * (n * o - 2 * range_sum))

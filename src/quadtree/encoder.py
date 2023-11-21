@@ -1,9 +1,9 @@
-from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
 from numba import njit
 
+from quadtree.common import Domain, EncodingInfo, QuadtreeNode
 from utils import average_subsample_jit
 
 
@@ -20,6 +20,7 @@ POSITIVE = 1
 NEGATIVE = -1
 ZERO_TOLERANCE = 1e-6
 
+SAME_AS_SIDE = -1
 
 """
 1. classify domains:
@@ -37,106 +38,103 @@ ZERO_TOLERANCE = 1e-6
         exceed max_partitions)
 """
 
-@dataclass
-class Domain:
-    start_i: int
-    start_j: int
-    orientation: int
-    rotation: int
-    s: float
-    o: float
-
-class QuadtreeNode:
-    def __init__(self, domain: Domain | None, children: tuple["QuadtreeNode", "QuadtreeNode", "QuadtreeNode", "QuadtreeNode"] | None) -> None:
-        self.domain = domain
-        self.children = children
-    
-    def is_leaf(self):
-        return self.domain is not None
-    
-    @staticmethod
-    def Leaf(domain: Domain) -> "QuadtreeNode":
-        return QuadtreeNode(domain, None)
-    
-    @staticmethod
-    def ParentOf(c1: "QuadtreeNode", c2: "QuadtreeNode", c3: "QuadtreeNode", c4: "QuadtreeNode") -> "QuadtreeNode":
-        return QuadtreeNode(None, (c1, c2, c3, c4))
-
 class QuadtreeEncoder:
-    def __init__(self, scale_range: tuple[np.float32, np.float32], only_positive_scale: bool, full_class_search: bool,
-                  min_partitions: int, max_partitions: int, error_tolerance: np.float32) -> None:
-        self.scale_range = scale_range
-        self.only_positive_scale = only_positive_scale
+    def __init__(self, encoding_info: EncodingInfo, full_class_search: bool, only_positive_scale: bool,
+                 min_range_side: int, max_range_side: int, error_tolerance: float,
+                 domain_hstep: int = SAME_AS_SIDE,  domain_vstep: int = SAME_AS_SIDE) -> None:
+        """
+        Args:
+            encoding_info (EncodingInfo): encoding metadata
+            full_class_search (bool): whether every mean and variance class should be searched for each range
+            min_range_side (int): don't divide sub images that reach this size
+            max_range_side (int): must divide sub images until this size is reached
+            error_tolerance (float): if rms error of compressed sub image is bigger that this value, sub image is divide into 4 parts
+        """
+        self.encoding_info = encoding_info
         self.full_class_search = full_class_search
-
-        self.min_partitions = min_partitions
-        self.max_partitions = max_partitions
+        self.only_positive_scale = only_positive_scale
+        self.min_range_exponent = int(np.log2(min_range_side))
+        self.max_range_exponent = int(np.log2(max_range_side))
         self.error_tolerance = error_tolerance
+        self.domain_hstep = domain_hstep
+        self.domain_vstep = domain_vstep
 
         self.domain_lists = None
         self.max_square_exponent = None
+        # if image is a rectangle we might end up with ranges with smaller side than min_range_side
+        self.min_needed_range_exponent = None 
 
     def encode(self, img: np.ndarray) -> list[QuadtreeNode]:
-        self.domains = []
-        max_square_vertical = int(np.log2(img.shape[0]))
-        max_square_horizontal = int(np.log2(img.shape[1]))
+        height, width = img.shape
+        max_square_vertical = int(np.log2(height))
+        max_square_horizontal = int(np.log2(width))
+        self.max_square_exponent = min(max_square_vertical, max_square_horizontal)
 
-        img_square_exponent = min(max_square_vertical, max_square_horizontal)
-        assert img_square_exponent >= self.max_partitions and img_square_exponent > self.min_partitions
+        self.min_needed_range_exponent = min(self.min_range_exponent, 
+                                            max(int(np.log2(self._get_smallest_range_size(width, height))), 1))
+        self.domain_lists = self._build_domain_lists(img)
 
-        self._build_domain_lists(img, img_square_exponent)
-        quandtree_roots = self._partition_image(img, 0, 0)
+        quandtree_roots = self._partition_image(img, 0, 0, width, height)
         return quandtree_roots
+    
+    def _get_smallest_range_size(self, width: int, height: int) -> int:
+        if width == 0:
+            return height
+        if height == 0:
+            return width
+        if width == 1 or height == 1:
+            return 1
+        max_square = 2**int(min(np.log2(width), np.log2(height)))
+        if max_square == width and max_square == height:
+            return max_square
+        fits_on_x = width // max_square
+        fits_on_y = height // max_square
+        min_right = self._get_smallest_range_size(width - fits_on_x * max_square, height)
+        min_bottom = self._get_smallest_range_size(fits_on_x * max_square, height - fits_on_y * max_square)
+        return min(min_bottom, min_right)
 
-    def _build_domain_lists(self, img: np.ndarray, max_img_square_exponent: int):
-        max_range_exponent = max_img_square_exponent - self.min_partitions
-        min_range_exponent = max_img_square_exponent - self.max_partitions
+    def _build_domain_lists(self, img: np.ndarray):
+        min_domain_exponent = self.min_needed_range_exponent + 1
+        max_domain_exponent = self.max_range_exponent + 1
 
-        max_domain_exponent = max_range_exponent + 1
-        min_domain_exponent = min_range_exponent + 1
+        domain_lists = [None] * (max_domain_exponent - min_domain_exponent + 1)
 
-        self.domain_lists = [None] * (max_domain_exponent - min_domain_exponent + 1)
-
-        for i, domain_exponent in enumerate(range(max_domain_exponent, min_domain_exponent - 1, -1)):
+        for i, domain_exponent in enumerate(range(min_domain_exponent, max_domain_exponent + 1)):
             side = 2**domain_exponent
-            hstep = vstep = side
-            self.domain_lists[i] = _build_domain_list(img, side, hstep, vstep) 
-
-    def _partition_image(self, img: np.ndarray, start_i: int, start_j: int) -> list[QuadtreeNode]:
-        max_square_vertical = int(np.log2(img.shape[0]))
-        max_square_horizontal = int(np.log2(img.shape[1]))
-
-        img_square_exponent = min(max_square_vertical, max_square_horizontal)
-        self.max_square_exponent = img_square_exponent
+            hstep = side if self.domain_hstep == SAME_AS_SIDE else self.domain_hstep
+            vstep = side if self.domain_vstep == SAME_AS_SIDE else self.domain_vstep
+            domain_lists[i] = _build_domain_list(img, side, hstep, vstep) 
         
-        main_node = self._quadtree(img, start_i, start_j, 2**img_square_exponent, 0)
+        return domain_lists
 
-        # TODO
-        assert img.shape[0] == 2**max_square_vertical and \
-               img.shape[1] == 2**max_square_horizontal and \
-               max_square_vertical == max_square_horizontal, "Input must be square with 2^k side"
+    def _partition_image(self, img: np.ndarray, start_i: int, start_j: int, width: int, height: int) -> list[QuadtreeNode]:
+        max_square_vertical = int(np.log2(height))
+        max_square_horizontal = int(np.log2(width))
+        max_square_exponent = min(max_square_vertical, max_square_horizontal)
 
-        return [main_node]
+        max_square_side = 2**max_square_exponent
+        main_node = self._quadtree(img, start_i, start_j, max_square_side, max_square_exponent)
+        roots = [main_node]
 
-        # if max_square < img.shape[1]:
-        #     _partition_image(img, )        
+        if max_square_side < width:
+            roots.extend(self._partition_image(img, start_i, start_j + max_square_side, width - max_square_side, height))
+        if max_square_side < height:
+            roots.extend(self._partition_image(img, start_i + max_square_side, start_j, max_square_side, height - max_square_side))
 
-        # right_rect = img[:img.shape[0] - max_square, max_square:]
-        # bottom_rect = img[img.shape[0] - max_square:, :]    
+        return roots
 
-
-    def _quadtree(self, img: np.ndarray, start_i: int, start_j: int, side: int, depth: int) -> QuadtreeNode:
+    def _quadtree(self, img: np.ndarray, start_i: int, start_j: int, side: int, size_exponent: int) -> QuadtreeNode:
         """Performs quadtree over img[start_i:start_i:side, start_j:start_j+side]. Side must be power of 2."""
-        if depth < self.min_partitions:
-            return self._divide_into_4_subsquares(img, start_i, start_j, side // 2, depth + 1)
+        if size_exponent > self.max_range_exponent:
+            return self._divide_into_4_subsquares(img, start_i, start_j, side // 2, size_exponent - 1)
             
-        best_domain = self._find_best_domain(img, start_i, start_j, self.max_square_exponent - depth)
+        best_domain = self._find_best_domain(img, start_i, start_j, side, size_exponent)
         # best_domain = _find_best_domain_bruteforce(img, img[start_i:start_i + side, start_j: start_j + side], side * 2)
         domain_i, domain_j, orient, rot, scale_factor, offset_factor, rms_err = best_domain
         
-        if rms_err > self.error_tolerance and depth < self.max_partitions:
-            # TODO probably should check if mean error of these divided subsquares is lower than this square
-            return self._divide_into_4_subsquares(img, start_i, start_j, side // 2, depth + 1)
+        if rms_err > self.error_tolerance and size_exponent > self.min_range_exponent:
+            # TODO probably should check if mean error of these divided subsquares is lower than this square, is it even possible?
+            return self._divide_into_4_subsquares(img, start_i, start_j, side // 2, size_exponent - 1)
         else:
             return QuadtreeNode.Leaf(Domain(domain_i, domain_j, orient, rot, scale_factor, offset_factor))
 
@@ -147,16 +145,18 @@ class QuadtreeEncoder:
         c4 = self._quadtree(img, start_i + new_side, start_j + new_side, new_side, new_depth)
         return QuadtreeNode.ParentOf(c1, c2, c3, c4)
 
-    def _find_best_domain(self, img: np.ndarray, start_i: int, start_j: int,
+    def _find_best_domain(self, img: np.ndarray, start_i: int, start_j: int, side: int,
             size_exponent: int) -> tuple[int, int, int, int, np.float32, np.float32, np.float32]:
-        side = 2**size_exponent
-        domain_size_idx = self.max_square_exponent - self.min_partitions - size_exponent
+        if side == 1:
+            # TODO can't classify subimage with side = 1 (i.e. images with odd width/height will have black border)
+            return (0, 0, 0, 0, 0., 0., 1e-4)
 
+        domain_size_idx = size_exponent - self.min_needed_range_exponent
         best_domain = None
         best_err = np.inf
 
         modes = (POSITIVE,) if self.only_positive_scale else (POSITIVE, NEGATIVE)
-    
+
         for mode in modes:
             if mode == POSITIVE:
                 mc, vc, rot, orient = _classify(img, start_i, start_j, side)
@@ -185,7 +185,7 @@ class QuadtreeEncoder:
                 for vc in vcs:
                     candidate_domains = self.domain_lists[domain_size_idx][mc][vc]
                     domain_info, err = _find_min_err_domain(img, start_i, start_j, side,
-                        *self.scale_range, rot, orient, candidate_domains)
+                        -self.encoding_info.max_scale, self.encoding_info.max_scale, rot, orient, candidate_domains)
                     if err < best_err:
                         best_err = err
                         best_domain = domain_info
@@ -259,6 +259,7 @@ def _classify(img: np.ndarray, start_i: int, start_j: int, side: int) -> tuple[i
     return mean_class, vc, rotation, orientation
 
 def _build_domain_list(img: np.ndarray, side: int, hstep: int, vstep: int) -> np.ndarray:
+    # TODO make it JITable
     n_vertical_domains = 1 + (img.shape[0] - side) // vstep
     n_horizontal_domains = 1 + (img.shape[1] - side) // hstep
     

@@ -1,17 +1,10 @@
-from enum import Enum
-
 import numpy as np
 from numba import njit
 
-from quadtree.common import Domain, EncodingInfo, QuadtreeNode
+from quadtree.common import (MAX_GRAY, NORMAL_ORIENTATION,
+                             TRANSPOSED_ORIENTATION, Domain, EncodingInfo,
+                             QuadtreeImage, QuadtreeNode)
 from utils import average_subsample_jit
-
-
-class DomainSelectionStrategy(Enum):
-    D2 = 0
-
-NORMAL_ORIENTATION = 0
-TRANSPOSED_ORIENTATION = 1
 
 NUM_MEAN_CLASSES = 3
 NUM_VARIANCE_CLASSES = 24
@@ -39,18 +32,25 @@ SAME_AS_SIDE = -1
 """
 
 class QuadtreeEncoder:
-    def __init__(self, encoding_info: EncodingInfo, full_class_search: bool, only_positive_scale: bool,
-                 min_range_side: int, max_range_side: int, error_tolerance: float,
+    def __init__(self, scale_bits: int, offset_bits: int, max_scale: float, full_class_search: bool,
+                 only_positive_scale: bool, min_range_side: int, max_range_side: int, error_tolerance: float,
                  domain_hstep: int = SAME_AS_SIDE,  domain_vstep: int = SAME_AS_SIDE) -> None:
         """
         Args:
-            encoding_info (EncodingInfo): encoding metadata
+            scale_bits (int): number of bits for scale quantization
+            offset_bits (int): number of bits for offset quantization
+            max_scale (float): max magnitude of scale
             full_class_search (bool): whether every mean and variance class should be searched for each range
+            only_positive_scale (bool): whether search should be limited to positive-scaled classes
             min_range_side (int): don't divide sub images that reach this size
             max_range_side (int): must divide sub images until this size is reached
             error_tolerance (float): if rms error of compressed sub image is bigger that this value, sub image is divide into 4 parts
+            domain_hstep (int): horizontal step for building domain pools
+            domain_vstep (int): vertical step for building domain pools
         """
-        self.encoding_info = encoding_info
+        self.scale_bits = scale_bits
+        self.offset_bits = offset_bits
+        self.max_scale = max_scale
         self.full_class_search = full_class_search
         self.only_positive_scale = only_positive_scale
         self.min_range_exponent = int(np.log2(min_range_side))
@@ -64,7 +64,7 @@ class QuadtreeEncoder:
         # if image is a rectangle we might end up with ranges with smaller side than min_range_side
         self.min_needed_range_exponent = None 
 
-    def encode(self, img: np.ndarray) -> list[QuadtreeNode]:
+    def encode(self, img: np.ndarray) -> QuadtreeImage:
         height, width = img.shape
         max_square_vertical = int(np.log2(height))
         max_square_horizontal = int(np.log2(width))
@@ -75,7 +75,8 @@ class QuadtreeEncoder:
         self.domain_lists = self._build_domain_lists(img)
 
         quandtree_roots = self._partition_image(img, 0, 0, width, height)
-        return quandtree_roots
+        metadata = EncodingInfo(self.scale_bits, self.offset_bits, self.max_scale, width, height)
+        return QuadtreeImage(metadata, quandtree_roots)
     
     def _get_smallest_range_size(self, width: int, height: int) -> int:
         if width == 0:
@@ -128,15 +129,14 @@ class QuadtreeEncoder:
         if size_exponent > self.max_range_exponent:
             return self._divide_into_4_subsquares(img, start_i, start_j, side // 2, size_exponent - 1)
             
-        best_domain = self._find_best_domain(img, start_i, start_j, side, size_exponent)
+        best_domain, rms_err = self._find_best_domain(img, start_i, start_j, side, size_exponent)
         # best_domain = _find_best_domain_bruteforce(img, img[start_i:start_i + side, start_j: start_j + side], side * 2)
-        domain_i, domain_j, orient, rot, scale_factor, offset_factor, rms_err = best_domain
         
         if rms_err > self.error_tolerance and size_exponent > self.min_range_exponent:
             # TODO probably should check if mean error of these divided subsquares is lower than this square, is it even possible?
             return self._divide_into_4_subsquares(img, start_i, start_j, side // 2, size_exponent - 1)
         else:
-            return QuadtreeNode.Leaf(Domain(domain_i, domain_j, orient, rot, scale_factor, offset_factor))
+            return QuadtreeNode.Leaf(best_domain)
 
     def _divide_into_4_subsquares(self, img: np.ndarray, start_i: int, start_j: int, new_side: int, new_depth: int) -> QuadtreeNode:
         c1 = self._quadtree(img, start_i, start_j, new_side, new_depth)
@@ -145,11 +145,11 @@ class QuadtreeEncoder:
         c4 = self._quadtree(img, start_i + new_side, start_j + new_side, new_side, new_depth)
         return QuadtreeNode.ParentOf(c1, c2, c3, c4)
 
-    def _find_best_domain(self, img: np.ndarray, start_i: int, start_j: int, side: int,
-            size_exponent: int) -> tuple[int, int, int, int, np.float32, np.float32, np.float32]:
+    def _find_best_domain(self, img: np.ndarray, start_i: int, start_j: int,
+                          side: int, size_exponent: int) -> tuple[Domain, float]:
         if side == 1:
             # TODO can't classify subimage with side = 1 (i.e. images with odd width/height will have black border)
-            return (0, 0, 0, 0, 0., 0., 1e-4)
+            return Domain(0, 0, 0, 0, 0., 0., 0, 0), 1e-4
 
         domain_size_idx = size_exponent - self.min_needed_range_exponent
         best_domain = None
@@ -185,12 +185,12 @@ class QuadtreeEncoder:
                 for vc in vcs:
                     candidate_domains = self.domain_lists[domain_size_idx][mc][vc]
                     domain_info, err = _find_min_err_domain(img, start_i, start_j, side,
-                        -self.encoding_info.max_scale, self.encoding_info.max_scale, rot, orient, candidate_domains)
+                        self.max_scale, self.scale_bits, self.offset_bits, rot, orient, candidate_domains)
                     if err < best_err:
                         best_err = err
                         best_domain = domain_info
 
-        return *best_domain, np.sqrt(err)
+        return Domain(*best_domain), np.sqrt(best_err)
         
 @njit
 def _classify(img: np.ndarray, start_i: int, start_j: int, side: int) -> tuple[int, int, int, int]:
@@ -284,10 +284,10 @@ def _build_domain_list(img: np.ndarray, side: int, hstep: int, vstep: int) -> np
 
 @njit
 def _find_min_err_domain(img: np.ndarray, start_i: int, start_j: int, side: int,
-         min_scale: np.float32, max_scale: np.float32, range_rot: int, range_orient: int,
-         candidate_domains: np.ndarray) -> tuple[int, int, int, int, np.float32, np.float32, np.float32]:
+         max_scale: np.float32, scale_bits: int, offset_bits: int, range_rot: int, range_orient: int,
+         candidate_domains: np.ndarray) -> tuple[int, int, int, int, np.float32, np.float32, np.float32, int, int]:
     best_error = np.inf
-    best_domain = (0, 0, 0, 0, 0., 0.)
+    best_domain = (0, 0, 0, 0, 0., 0., 0, 0)
     img_range = img[start_i:start_i + side, start_j:start_j + side].astype(np.float32)
     range_sum = np.sum(img_range)
     squared_range_sum = np.sum(img_range**2)
@@ -309,21 +309,23 @@ def _find_min_err_domain(img: np.ndarray, start_i: int, start_j: int, side: int,
             domain_reordered = domain_reordered.T
 
         domain_subsampled = average_subsample_jit(domain_reordered)
-        error, scale_factor, offset_factor = _calc_rms_error(
-            domain_subsampled, img_range, min_scale, max_scale, range_sum, np.sum(domain_subsampled),
+        error, scale_factor, offset_factor, quantized_scale_factor, quantized_offset_factor = _calc_rms_error(
+            domain_subsampled, img_range, max_scale, scale_bits, offset_bits, range_sum, np.sum(domain_subsampled),
             squared_range_sum, np.sum(domain_subsampled*domain_subsampled), img_range.shape[0]
         )
 
         if error < best_error:
             best_error = error
-            best_domain = (domain_start_i, domain_start_j, d_orient, d_rot, scale_factor, offset_factor)
+            best_domain = (domain_start_i, domain_start_j, d_orient, d_rot,
+                           scale_factor, offset_factor, quantized_scale_factor, quantized_offset_factor)
 
     return best_domain, best_error
 
 @njit
-def _calc_rms_error(domain: np.ndarray, range_: np.ndarray, min_scale: np.float32, max_scale: np.float32,
-        range_sum: np.float32, domain_sum: np.float32, squared_range_sum: np.float32,
-        squared_domain_sum: np.float32, range_size: int) -> tuple[np.float32, np.float32, np.float32]:
+def _calc_rms_error(domain: np.ndarray, range_: np.ndarray, max_scale: np.float32,
+        scale_bits: int, offset_bits: int, range_sum: np.float32, domain_sum: np.float32,
+        squared_range_sum: np.float32, squared_domain_sum: np.float32, range_size: int
+        ) -> tuple[np.float32, np.float32, np.float32]:
     n = range_size * range_size
     ab_sum = np.sum(domain * range_)
     
@@ -335,24 +337,51 @@ def _calc_rms_error(domain: np.ndarray, range_: np.ndarray, min_scale: np.float3
         s = (n * ab_sum - range_sum * domain_sum) / denominator
         o = 1. / n * (range_sum - s * domain_sum)
 
-    if s < min_scale or s > max_scale:
-        s = min_scale
+    if s < -max_scale or s > max_scale:
+        s = -max_scale
         o_left = 1. / n * (range_sum - s * domain_sum)
-        R_left = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum, o_left, domain_sum, range_sum)
+        R_left, qs_left, qo_left = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
+                                     o_left, domain_sum, range_sum, max_scale, scale_bits, offset_bits)
         s = max_scale
         o = 1. / n * (range_sum - s * domain_sum)
-        R_right = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum, o, domain_sum, range_sum)
+        R_right, qs_right, qo_right = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
+                                     o, domain_sum, range_sum, max_scale, scale_bits, offset_bits)
         if R_right < R_left:
-            return R_right, s, o
-        return R_left, min_scale, o_left
+            return R_right, s, o, qs_right, qo_right
+        return R_left, -max_scale, o_left, qs_left, qo_left
     else:
-        R = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum, o, domain_sum, range_sum)
-        return R, s, o
+        R, qs, qo = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
+                             o, domain_sum, range_sum, max_scale, scale_bits, offset_bits)
+        return R, s, o, qs, qo
 
 @njit
-def _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum, o, domain_sum, range_sum):
-    # TODO use quantized scale and offset
-    return 1. / n * (squared_range_sum + s * (s * squared_domain_sum - 2 * ab_sum + 2 * o * domain_sum) + o * (n * o - 2 * range_sum))
+def _calc_square_error(n: int, squared_range_sum: np.float32, s: np.float32, squared_domain_sum: np.float32,
+                       ab_sum: np.float32, o: np.float32, domain_sum: np.float32, range_sum: np.float32,
+                       max_scale: float, scale_bits: int, offset_bits: int) -> tuple[float, int, int]:
+    # TODO positive-only-mode can have better precision using same scale_bits
+    qs = int((s + max_scale) / (2 * max_scale) * 2**scale_bits)
+    if qs < 0.: qs = 0
+    if qs > 2**scale_bits - 1: qs = 2**scale_bits - 1
+    s = np.float64(qs) * (2 * max_scale) / np.float64(2**scale_bits) - max_scale
+
+    offset_div_coef = np.float64(MAX_GRAY)
+    if s < 0.:
+        offset_div_coef *= (1 + s)
+        if s == -1.:
+            # zero division error may happen as we set s = -1. explicitly with max_scale = 1 if it is out of bounds
+            offset_div_coef = 1e-6
+    qo = int((o + MAX_GRAY * s) / offset_div_coef * 2**offset_bits)
+    if qo < 0: qo = 0 
+    if qo > 2**offset_bits - 1: qo = 2**offset_bits - 1
+    o = np.float64(qo) / 2**offset_bits * offset_div_coef - MAX_GRAY * s
+
+    R = 1. / n * (
+        squared_range_sum +
+        s * (s * squared_domain_sum - 2 * ab_sum + 2 * o * domain_sum) +
+        o * (n * o - 2 * range_sum)
+    )
+
+    return R, qs, qo
 
 if __name__ == "__main__":
     # img = np.array([

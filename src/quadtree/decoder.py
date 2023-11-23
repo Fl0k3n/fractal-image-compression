@@ -6,6 +6,7 @@ from quadtree.common import (MAX_GRAY, TRANSPOSED_ORIENTATION, QuadtreeImage,
                              QuadtreeNode)
 from utils import average_subsample
 
+AUTO = -1
 
 class QuadtreeDecoder:
     def __init__(self, img: QuadtreeImage) -> None:
@@ -23,13 +24,29 @@ class QuadtreeDecoder:
         self.use_quantized_values = False
         return self
 
-    def decode(self, iterations: int = 10) -> np.ndarray:
+    def decode(self, iterations: int = AUTO, stop_on_relative_error: float = 5e-3,
+               min_iterations=2, max_iterations=10, log_stop=False) -> np.ndarray:
         self.img = np.zeros((self.height, self.width), dtype=np.float32) 
         self.next_img = np.empty_like(self.img)
-
-        for _ in range(iterations):
-            self._de_partition(0, 0, self.width, self.height, 0)
-            self.img = self.next_img
+        
+        if iterations == AUTO:
+            for _ in range(min_iterations):
+                self._de_partition(0, 0, self.width, self.height, 0)
+                self.img[:] = self.next_img[:]
+            for i in range(min_iterations, max_iterations):
+                self._de_partition(0, 0, self.width, self.height, 0)
+                err = np.linalg.norm(self.next_img - self.img, ord='fro')
+                std = np.linalg.norm(self.next_img)
+                self.img[:] = self.next_img[:]
+                if err / std < stop_on_relative_error:
+                    print(f'{err}\t{stop_on_relative_error}\t{err-stop_on_relative_error}')
+                    if log_stop:
+                        print(f'Auto decoding stopped after {i} iterations')
+                    break
+        else:
+            for _ in range(iterations):
+                self._de_partition(0, 0, self.width, self.height, 0)
+                self.img[:] = self.next_img[:]
         
         return self.img.astype(np.uint8)
     

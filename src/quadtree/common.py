@@ -1,4 +1,9 @@
 from dataclasses import dataclass, replace
+from typing import Callable
+
+import numpy as np
+
+from entropy.processor import CodingDimension
 
 NORMAL_ORIENTATION = 0
 TRANSPOSED_ORIENTATION = 1
@@ -46,3 +51,19 @@ class QuadtreeNode:
 class QuadtreeImage:
     info: EncodingInfo
     forest: list[QuadtreeNode]
+
+def get_dimension_bit_widths(info: EncodingInfo) -> list[int]:
+    dimension_default_bit_widths = [None for _ in CodingDimension]
+    dimension_default_bit_widths[CodingDimension.DOMAIN_ROW.value] = int(np.ceil(np.log2(info.img_height)))
+    dimension_default_bit_widths[CodingDimension.DOMAIN_COL.value] = int(np.ceil(np.log2(info.img_width)))
+    dimension_default_bit_widths[CodingDimension.SCALE.value] = info.scale_bits
+    dimension_default_bit_widths[CodingDimension.OFFSET.value] = info.offset_bits
+    return dimension_default_bit_widths
+
+def get_domain_dimension_extractors() -> list[Callable[[Domain], int]]:
+    dimension_extractors = [None for _ in CodingDimension]
+    dimension_extractors[CodingDimension.DOMAIN_ROW.value] = lambda d: d.start_i
+    dimension_extractors[CodingDimension.DOMAIN_COL.value] = lambda d: d.start_j
+    dimension_extractors[CodingDimension.SCALE.value] =      lambda d: d.quantized_scale
+    dimension_extractors[CodingDimension.OFFSET.value] =     lambda d: d.quantized_offset
+    return dimension_extractors

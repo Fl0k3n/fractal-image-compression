@@ -39,7 +39,7 @@ class QuadtreeDecoder:
                 std = np.linalg.norm(self.next_img)
                 self.img[:] = self.next_img[:]
                 if err / std < stop_on_relative_error:
-                    print(f'{err}\t{stop_on_relative_error}\t{err-stop_on_relative_error}')
+                    # print(f'{err}\t{stop_on_relative_error}\t{err-stop_on_relative_error}')
                     if log_stop:
                         print(f'Auto decoding stopped after {i} iterations')
                     break

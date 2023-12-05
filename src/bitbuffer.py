@@ -6,6 +6,9 @@ EOF = -1
 class BitBuffer:
     """Buffer that supports writing and reading unsigned integers with arbitrary bit widths.
     """
+    MAX_BIT_WIDTH = 32
+    MAX_BYTE_WIDTH = MAX_BIT_WIDTH // 8
+
     def __init__(self, backing_buff: BinaryIO, struct_byte_order="!") -> None:
         self.buff = 0
         self.accumulated_size = 0
@@ -13,9 +16,9 @@ class BitBuffer:
         self.struct_byte_order = struct_byte_order
     
     def write(self, v: int, bit_width: int) -> bytes | None:
-        # only unsigned integral values of size <= 4B can be used 
-        if self.accumulated_size + bit_width >= 32:
-            free_space = 32 - self.accumulated_size
+        # only unsigned integral values of size <= MAX_BIT_WIDTH can be used 
+        if self.accumulated_size + bit_width >= self.MAX_BIT_WIDTH:
+            free_space = self.MAX_BIT_WIDTH - self.accumulated_size
             mask = (1 << free_space) - 1
             self.buff <<= free_space
             self.buff |= (mask & (v >> (bit_width - free_space)))
@@ -39,9 +42,9 @@ class BitBuffer:
             bits_to_read = bit_width - self.accumulated_size
             mask = (1 << self.accumulated_size) - 1
             res = (self.buff & mask) << bits_to_read
-            self.accumulated_size = 32
-            serialized = self.backing_buff.read(4)
-            if len(serialized) < 4:
+            self.accumulated_size = self.MAX_BIT_WIDTH
+            serialized = self.backing_buff.read(self.MAX_BYTE_WIDTH)
+            if len(serialized) < self.MAX_BYTE_WIDTH:
                 return EOF
             self.buff = struct.unpack(f'{self.struct_byte_order}I', serialized)[0]
         else:
@@ -53,7 +56,7 @@ class BitBuffer:
         return res
 
     def flush(self) -> bytes:
-        self.buff <<= (32 - self.accumulated_size)
+        self.buff <<= (self.MAX_BIT_WIDTH - self.accumulated_size)
         serialized_buff = struct.pack(f"{self.struct_byte_order}I", self.buff)
         self.buff = 0
         self.accumulated_size = 0

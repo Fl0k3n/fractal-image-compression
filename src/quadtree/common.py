@@ -52,6 +52,12 @@ class QuadtreeImage:
     info: EncodingInfo
     forest: list[QuadtreeNode]
 
+@dataclass
+class ColoredQuadtreeImage:
+    encoded_Y: QuadtreeImage
+    encoded_Cb: QuadtreeImage
+    encoded_Cr: QuadtreeImage
+
 def get_dimension_bit_widths(info: EncodingInfo) -> list[int]:
     dimension_default_bit_widths = [None for _ in CodingDimension]
     dimension_default_bit_widths[CodingDimension.DOMAIN_ROW.value] = int(np.ceil(np.log2(info.img_height)))

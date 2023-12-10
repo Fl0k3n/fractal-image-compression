@@ -9,11 +9,13 @@ from utils import average_subsample
 AUTO = -1
 
 class QuadtreeDecoder:
-    def __init__(self, img: QuadtreeImage) -> None:
-        self.width = img.info.img_width
-        self.height = img.info.img_height
-        self.forest = img.forest
-        self.encoding_info = img.info
+    def __init__(self, iterations: int = AUTO, stop_on_relative_error: float = 5e-3,
+               min_iterations=2, max_iterations=10, log_stop=False) -> None:
+        self.iterations = iterations
+        self.stop_on_relative_error = stop_on_relative_error
+        self.min_iterations = min_iterations
+        self.max_iterations = max_iterations
+        self.log_stop = log_stop
 
         self.img: np.ndarray = None
         self.next_img: np.ndarray = None
@@ -24,51 +26,51 @@ class QuadtreeDecoder:
         self.use_quantized_values = False
         return self
 
-    def decode(self, iterations: int = AUTO, stop_on_relative_error: float = 5e-3,
-               min_iterations=2, max_iterations=10, log_stop=False) -> np.ndarray:
-        self.img = np.zeros((self.height, self.width), dtype=np.float32) 
+    def decode(self, quadtree_img: QuadtreeImage) -> np.ndarray:
+        height, width = quadtree_img.info.img_height, quadtree_img.info.img_width
+        self.img = np.zeros((height, width), dtype=np.float64) 
         self.next_img = np.empty_like(self.img)
         
-        if iterations == AUTO:
-            for _ in range(min_iterations):
-                self._de_partition(0, 0, self.width, self.height, 0)
+        if self.iterations == AUTO:
+            for _ in range(self.min_iterations):
+                self._de_partition(quadtree_img, 0, 0, width, height, 0)
                 self.img[:] = self.next_img[:]
-            for i in range(min_iterations, max_iterations):
-                self._de_partition(0, 0, self.width, self.height, 0)
+            for i in range(self.min_iterations, self.max_iterations):
+                self._de_partition(quadtree_img, 0, 0, width, height, 0)
                 err = np.linalg.norm(self.next_img - self.img, ord='fro')
                 std = np.linalg.norm(self.next_img)
                 self.img[:] = self.next_img[:]
-                if err / std < stop_on_relative_error:
+                if err / std < self.stop_on_relative_error:
                     # print(f'{err}\t{stop_on_relative_error}\t{err-stop_on_relative_error}')
-                    if log_stop:
+                    if self.log_stop:
                         print(f'Auto decoding stopped after {i} iterations')
                     break
         else:
-            for _ in range(iterations):
-                self._de_partition(0, 0, self.width, self.height, 0)
+            for _ in range(self.iterations):
+                self._de_partition(quadtree_img, 0, 0, width, height, 0)
                 self.img[:] = self.next_img[:]
         
-        return self.img.astype(np.uint8)
+        return self.img.clip(0., 255.).astype(np.uint8)
     
-    def _de_partition(self, i: int, j: int, width: int, height: int, root_counter: int) -> int:
+    def _de_partition(self, quadtree_img: QuadtreeImage, i: int, j: int, width: int, height: int, root_counter: int) -> int:
         max_square_exponent = int(min(np.log2(width), np.log2(height)))
         max_square_side = 2**max_square_exponent
 
-        self._decode_pow2_square(i, j, max_square_exponent, self.forest[root_counter])
+        self._decode_pow2_square(quadtree_img, i, j, max_square_exponent, quadtree_img.forest[root_counter])
         root_counter += 1
 
         if max_square_side < width:
-            root_counter = self._de_partition(i, j + max_square_side, width - max_square_side, height, root_counter)
+            root_counter = self._de_partition(quadtree_img, i, j + max_square_side, width - max_square_side, height, root_counter)
         if max_square_side < height:
-            root_counter = self._de_partition(i + max_square_side, j, max_square_side, height - max_square_side, root_counter)
+            root_counter = self._de_partition(quadtree_img, i + max_square_side, j, max_square_side, height - max_square_side, root_counter)
         
         return root_counter
         
-    def _decode_pow2_square(self, i: int, j: int, side_exponent: int, root: QuadtreeNode):
+    def _decode_pow2_square(self, quadtree_img: QuadtreeImage, i: int, j: int, side_exponent: int, root: QuadtreeNode):
         queue = deque([(root, 0, i, j)])
-        max_encoded_scale = np.float64(2**self.encoding_info.scale_bits)
-        max_encoded_offset = np.float64(2**self.encoding_info.offset_bits)
-        max_scale = self.encoding_info.max_scale
+        max_encoded_scale = np.float64(2**quadtree_img.info.scale_bits)
+        max_encoded_offset = np.float64(2**quadtree_img.info.offset_bits)
+        max_scale = quadtree_img.info.max_scale
 
         while queue:
             cur, depth, range_i, range_j = queue.popleft()

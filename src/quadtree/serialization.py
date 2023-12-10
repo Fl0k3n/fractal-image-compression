@@ -15,32 +15,34 @@ INTERNAL_NODE_BIT = 0
 LEAF_BIT = 1
 
 STRUCT_BYTE_ORDER = "!"
-HEADER_STRUCT_FMT = f'{STRUCT_BYTE_ORDER}{len(QUADTREE_MAGIC)}sfBBHH'
-HEADER_SIZE = len(QUADTREE_MAGIC) + 10
+HEADER_STRUCT_FMT = f'{STRUCT_BYTE_ORDER}{len(QUADTREE_MAGIC)}sfBBHHI'
+HEADER_SIZE = len(QUADTREE_MAGIC) + 14
+SIZE_OFFSET = HEADER_SIZE - 4
 UNSUPPORTED = 0.
 
 DIMIENSION_PRESENT = 1
 DIMENSION_MISSING = 0
 
 class QuadtreeSerializer:
-    def __init__(self, quadtree_img: QuadtreeImage, entropy_processor: EntropyProcessor,
-                 entropy_coding_dimensions: set[CodingDimension]) -> None:
-        self.img = quadtree_img
+    def __init__(self, entropy_processor: EntropyProcessor, entropy_coding_dimensions: set[CodingDimension]) -> None:
         self.entropy_processor = entropy_processor
         self.entropy_coding_dimensions = entropy_coding_dimensions
         self.file: BinaryIO = None 
-        self._init_entropy_processor()
 
-    def serialize(self, output: str | BinaryIO):
+    def serialize(self, quadtree_img: QuadtreeImage, output: str | BinaryIO):
+        self.img = quadtree_img
+        self._init_entropy_processor()
         self.file = output
         should_close = False
         try:
             if isinstance(output, str):
                 should_close = True
                 self.file = open(output, 'wb')
+            initial_pos = self.file.tell()
             buff = BitBuffer(self.file, STRUCT_BYTE_ORDER)
             self._write_header(buff) 
             self._write_data(buff) 
+            self._write_size(initial_pos)
         finally:
             if should_close:
                 try:
@@ -74,7 +76,7 @@ class QuadtreeSerializer:
     def _write_header(self, buff: BitBuffer):
         header = struct.pack(HEADER_STRUCT_FMT, QUADTREE_MAGIC, self.img.info.max_scale,
                     self.img.info.scale_bits, self.img.info.offset_bits, 
-                    self.img.info.img_width, self.img.info.img_height)
+                    self.img.info.img_width, self.img.info.img_height, 0)
         self.file.write(header)
 
         buff.write(self.entropy_processor.processor_id().value, ENTROPY_PROCESSOR_ID_BITS)
@@ -86,6 +88,13 @@ class QuadtreeSerializer:
         for dim in CodingDimension:
             if dim in self.entropy_coding_dimensions:
                 self.entropy_processor.serialize_dimension_coding_structures(buff, dim)
+
+    def _write_size(self, initial_pos: int):
+        end_pos = self.file.tell()
+        size = end_pos - initial_pos
+        self.file.seek(initial_pos + SIZE_OFFSET)
+        self.file.write(struct.pack(f"{STRUCT_BYTE_ORDER}I", size))
+        self.file.seek(end_pos)
 
     def _write_data(self, buff: BitBuffer):
         for root in self.img.forest:
@@ -115,6 +124,7 @@ class QuadtreeDeserializer:
         self.entropy_processor: EntropyProcessor = None
         self.domain_i_bits = -1
         self.domain_j_bits = -1
+        self.initial_pos = -1
 
     def deserialize(self, input: str | BinaryIO) -> QuadtreeImage:
         self.file = input
@@ -124,6 +134,7 @@ class QuadtreeDeserializer:
             if isinstance(input, str):
                 should_close = True
                 self.file = open(input, 'rb')
+            self.initial_pos = self.file.tell()
             buff = BitBuffer(self.file, STRUCT_BYTE_ORDER)
             self._read_header(buff) 
             self._read_data(buff) 
@@ -151,6 +162,7 @@ class QuadtreeDeserializer:
             img_width=header[4],
             img_height=header[5],
         )
+        self.size = header[6]
         
         entropy_processor_id = buff.read(ENTROPY_PROCESSOR_ID_BITS)
         entropy_coding_dimensions = set()
@@ -168,7 +180,10 @@ class QuadtreeDeserializer:
         cur_root = None
         parent_queue = deque[tuple[QuadtreeNode, int]]()
 
-        while (node_type := buff.read(1)) != EOF:
+        while self.file.tell() < self.initial_pos + self.size:
+            node_type = buff.read(1)
+            assert node_type != EOF, "Invalid size encoding, buffer returned EOF"
+
             if node_type == LEAF_BIT:
                 start_i = self.entropy_processor.decode(buff, CodingDimension.DOMAIN_ROW)
                 start_j = self.entropy_processor.decode(buff, CodingDimension.DOMAIN_COL)

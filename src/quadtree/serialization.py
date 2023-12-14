@@ -24,9 +24,12 @@ DIMIENSION_PRESENT = 1
 DIMENSION_MISSING = 0
 
 class QuadtreeSerializer:
-    def __init__(self, entropy_processor: EntropyProcessor, entropy_coding_dimensions: set[CodingDimension]) -> None:
+    def __init__(self, entropy_processor: EntropyProcessor,
+                entropy_coding_dimensions: set[CodingDimension],
+                required_entropy_coding_gain=1) -> None:
         self.entropy_processor = entropy_processor
         self.entropy_coding_dimensions = entropy_coding_dimensions
+        self.required_entropy_coding_gain = required_entropy_coding_gain
         self.file: BinaryIO = None 
 
     def serialize(self, quadtree_img: QuadtreeImage, output: str | BinaryIO):
@@ -53,7 +56,8 @@ class QuadtreeSerializer:
     def _init_entropy_processor(self):
         encoding_dimension_values = self._extract_all_encoding_dimension_values()
         dimension_default_bit_widths = get_dimension_bit_widths(self.img.info)
-        self.entropy_processor.prepare_for_encoding(encoding_dimension_values, dimension_default_bit_widths)
+        encoding_gains = self.entropy_processor.prepare_for_encoding(encoding_dimension_values, dimension_default_bit_widths)
+        self.entropy_coding_dimensions = set([dim for dim, gain in encoding_gains.items() if gain >= self.required_entropy_coding_gain]) 
 
     def _extract_all_encoding_dimension_values(self) -> dict[CodingDimension, list[int]]:
         if not self.entropy_coding_dimensions:
@@ -180,7 +184,7 @@ class QuadtreeDeserializer:
         cur_root = None
         parent_queue = deque[tuple[QuadtreeNode, int]]()
 
-        while self.file.tell() < self.initial_pos + self.size:
+        while self.file.tell() < self.initial_pos + self.size or not buff.is_empty():
             node_type = buff.read(1)
             assert node_type != EOF, "Invalid size encoding, buffer returned EOF"
 

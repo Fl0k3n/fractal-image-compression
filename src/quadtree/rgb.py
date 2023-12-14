@@ -3,7 +3,7 @@ from typing import BinaryIO
 
 import numpy as np
 
-from quadtree.common import ColoredQuadtreeImage, QuadtreeImage
+from quadtree.common import ColoredQuadtreeImage
 from quadtree.decoder import QuadtreeDecoder
 from quadtree.encoder import QuadtreeEncoder
 from quadtree.serialization import QuadtreeDeserializer, QuadtreeSerializer

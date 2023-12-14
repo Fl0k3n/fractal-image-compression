@@ -4,6 +4,7 @@ import numpy as np
 
 from quadtree.common import (MAX_GRAY, TRANSPOSED_ORIENTATION, QuadtreeImage,
                              QuadtreeNode)
+from quadtree.postprocessing import QuadtreePostprocessor
 from utils import average_subsample
 
 AUTO = -1
@@ -26,7 +27,7 @@ class QuadtreeDecoder:
         self.use_quantized_values = False
         return self
 
-    def decode(self, quadtree_img: QuadtreeImage) -> np.ndarray:
+    def decode(self, quadtree_img: QuadtreeImage, postprocessor: QuadtreePostprocessor = None) -> np.ndarray:
         height, width = quadtree_img.info.img_height, quadtree_img.info.img_width
         self.img = np.zeros((height, width), dtype=np.float64) 
         self.next_img = np.empty_like(self.img)
@@ -49,6 +50,9 @@ class QuadtreeDecoder:
             for _ in range(self.iterations):
                 self._de_partition(quadtree_img, 0, 0, width, height, 0)
                 self.img[:] = self.next_img[:]
+        
+        if postprocessor is not None:
+            self.img = postprocessor.postprocess(self.img, quadtree_img)
         
         return self.img.clip(0., 255.).astype(np.uint8)
     

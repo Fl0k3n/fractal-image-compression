@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+from collections import Counter
 from enum import Enum
 
 from bitbuffer import BitBuffer
 from entropy.abccodec import Code, CodeWidth, EntropyEncoder, IdentityEncoder
-from entropy.huffman import (HuffmanDecoder, HuffmanDeserializer,
+from entropy.huffman import (CodingTable, HuffmanDecoder, HuffmanDeserializer,
                              HuffmanEncoder, HuffmanSerializer)
 
 
@@ -21,13 +22,19 @@ class EntropyProcessorId(Enum):
 
 class EntropyProcessor(ABC):
     @abstractmethod
-    def prepare_for_encoding(self, dimensions: dict[CodingDimension, list[int]], dimension_default_bit_widths: list[int]):
+    def prepare_for_encoding(self,
+            dimensions: dict[CodingDimension, list[int]],
+            dimension_default_bit_widths: list[int]) -> dict[CodingDimension, int]:
         """Prepares processor for encoding.
 
         Args:
             dimensions (dict[CodingDimension, list[int]]): dimensions that should be subject to entropy coding
             dimension_default_bit_widths (list[int]): default bit widths of all dimensions, including optional ones that 
             shouldn't be entropy-coded
+        
+        Returns:
+            dictionary of dimensions (subset of given ones) that result in compression gain, along the number of bytes 
+            reduced by compressing that dimension (>= 1)
         """
         pass
 
@@ -69,19 +76,34 @@ class HuffmanEntropyProcessor(EntropyProcessor):
         self.dimension_decoders: list[HuffmanDecoder] = [None for _ in CodingDimension]
         self.dimension_default_bit_widths: list[int]  = [-1 for _ in CodingDimension]
 
-    def prepare_for_encoding(self, dimensions: dict[CodingDimension, list[int]], dimension_default_bit_widths: list[int]):
+    def prepare_for_encoding(self,
+            dimensions: dict[CodingDimension, list[int]],
+            dimension_default_bit_widths: list[int]) -> dict[CodingDimension, int]:
         self.dimension_default_bit_widths = dimension_default_bit_widths
         assert len(dimension_default_bit_widths) == len(self.dimension_encoders), \
             "Every dimension requires default bit width"
 
+        dimensions_worth_encoding = {}
+
         for dimension, values in dimensions.items():
             encoder = HuffmanEncoder()
-            encoder.prepare_for_encoding(values)
-            self.dimension_encoders[dimension.value] = encoder
+            coding_table = encoder.prepare_for_encoding(values)
+            size_diff = self._get_raw_compresed_size_difference(coding_table, values, dimension_default_bit_widths[dimension.value])
+            if size_diff > 0:
+                dimensions_worth_encoding[dimension] = size_diff
+                self.dimension_encoders[dimension.value] = encoder
 
         for i, bit_width in enumerate(self.dimension_default_bit_widths):
             if self.dimension_encoders[i] is None:
                 self.dimension_encoders[i] = IdentityEncoder(bit_width)
+        
+        return dimensions_worth_encoding
+
+    def _get_raw_compresed_size_difference(self, coding_table: CodingTable, values: list[int], original_bit_width: int):
+        size_diff = 0
+        for symbol, count in Counter(values).items():
+            size_diff += count * (original_bit_width - coding_table[symbol][1])
+        return size_diff 
 
     def serialize_dimension_coding_structures(self, write_buff: BitBuffer, dimension: CodingDimension):
         bit_width = self.dimension_default_bit_widths[dimension.value]

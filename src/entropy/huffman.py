@@ -40,7 +40,7 @@ class HuffmanEncoder(EntropyEncoder):
         self.root: HuffmanNode = None
         self.coding_table: CodingTable = None
 
-    def prepare_for_encoding(self, symbols: list[int]):
+    def prepare_for_encoding(self, symbols: list[int]) -> CodingTable:
         heap = [HuffmanNode.Leaf(symbol, freq) for symbol, freq in Counter(symbols).items()]
         heapq.heapify(heap)
         while len(heap) > 1:
@@ -50,8 +50,9 @@ class HuffmanEncoder(EntropyEncoder):
 
         self.root = heap[0]
         self.coding_table = self._build_coding_table(self.root)
+        return self.coding_table
 
-    def encode(self, symbol: int):
+    def encode(self, symbol: int) -> tuple[Code, CodeWidth]:
         return self.coding_table[symbol]
     
     def _build_coding_table(self, root: HuffmanNode) -> CodingTable:
@@ -81,10 +82,10 @@ class HuffmanDecoder:
             
 class HuffmanSerializer:
     def serialize(self, root: HuffmanNode, val_bits: int, write_buff: BitBuffer):
-        assert not root.is_leaf()
-        queue = deque[HuffmanNode]()
-        queue.append(root.left)
-        queue.append(root.right)
+        # assert not root.is_leaf()
+        queue = deque[HuffmanNode]([root])
+        # queue.append(root.left)
+        # queue.append(root.right)
 
         while queue: 
             cur = queue.popleft()
@@ -98,6 +99,8 @@ class HuffmanSerializer:
 
 class HuffmanDeserializer:
     def deserialize(self, read_buff: BitBuffer, val_bits: int) -> HuffmanNode:
+        if read_buff.read(1) == LEAF_BIT:
+            return HuffmanNode.Leaf(read_buff.read(val_bits), UNAVAILABLE)
         parent_queue = deque[HuffmanNode]()
         root = HuffmanNode(UNAVAILABLE, None, None, None)
         parent_queue.append(root)

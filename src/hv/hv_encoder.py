@@ -2,6 +2,7 @@ import numpy as np
 
 from model import Domain, EncodedImage
 from utils import average_subsample
+from hv.common import *
 
 
 class HVEncoder:
@@ -16,8 +17,8 @@ class HVEncoder:
         self.sqr_diff_threshold = threshold
         self.min_range_size = 4
 
-    def encode(self) -> EncodedImage:
-        res = EncodedImage(self.img.shape[1], self.img.shape[0], range_size=4)
+    def encode(self) -> EncodedHvImage:
+        res = EncodedHvImage(self.img.shape[1], self.img.shape[0])
         res.domains = self.recursive_partitioning(self.img)
         return res
     
@@ -58,6 +59,7 @@ class HVEncoder:
         return P1, P2
     
     def domain_search(self, img_range):
+        domain_idx = 0
         found_domain = None
         domain_diff = np.inf
         if 2 * max(img_range.shape) > self.domain_size:
@@ -74,10 +76,34 @@ class HVEncoder:
                         if domain_diff is None or x < domain_diff:
                             # found better domain
                             domain_diff = x
-                            found_domain = Domain(i, j, orientation, rotation, 0, 0)
+                            s, o = self.getSO(domain_subsampled, img_range)
+                            # found_domain = Domain(i, j, rotation, s, o)
+                            found_partition = HvPartition(
+                                i, 
+                                j,
+                                domain_idx,
+                                orientation, 
+                                rotation, 
+                                s, 
+                                o
+                            )
+                            found_range = HvRange(
+                                i, 
+                                j, 
+                                img_range.shape[0], 
+                                img_range.shape[1], 
+                                domain_idx, 
+                                orientation, 
+                                rotation, 
+                                s, 
+                                o
+                            )
+                            # found_domain = HvDomain(i, j, img_range.shape[0], img_range.shape[1], orientation, rotation, s, o)
+                domain_idx += 1
         p, q = img_range.shape
         if domain_diff <= self.sqr_diff_threshold or p <= self.min_range_size or q <= self.min_range_size:
-            return found_domain  # found domain
+            # return found_domain
+            return found_partition, found_range
         return None
     
     def sqr_diff(self, domain, img_range):
@@ -90,5 +116,27 @@ class HVEncoder:
                 pixel_diffs += diff * diff
         return pixel_diffs
     
+    def getSO(self, img_range, domain_subsampled):
+        abs_product = [
+            [domain_subsampled[i][j] * img_range[i][j] 
+             for j in range(min(domain_subsampled.shape[1], img_range.shape[1]))
+             ]
+        for i in range(min(domain_subsampled.shape[0], img_range.shape[0]))
+        ]
+        ab_sum = np.sum(abs_product)
+        domain_sum = np.sum(domain_subsampled)
+        squared_domain_sum = np.sum(domain_subsampled**2)
+        range_sum = np.sum(img_range)
+        range_size = min(img_range.shape[0], img_range.shape[1])
+        n =  range_size * range_size
+        denominator = (n * squared_domain_sum - domain_sum * domain_sum)
+        if np.abs(denominator) < 1e-4:
+            s = 0.
+            o = 1. / n * range_sum
+        else:
+            s = (n * ab_sum - range_sum * domain_sum) / denominator
+            o = 1. / n * (range_sum - s * domain_sum)
+        return s, o
+        
 
 

@@ -246,9 +246,42 @@ For the first four dimensions of leaf values we construct a separete Huffman tre
 
 After decoding the image we perform a simple filtering operation to reduce blocking artifacts caused by independace of encoded subimages. For each boundary of a subimage we compute a weighted average of brightness values across that boundary.
 
+
 # HV algorithm
 
-same as above
+The HV Encoding Scheme is unique in its approach to partition the image. At its core, it repeats two basic functions: recursive partitioning and domain search. The goal of partitioning is to fincd non-overlapping ranges of the image, whereas domain search determines the mapping of a domain onto each range. This scheme requires for the domains to always be larger than the ranges by at least a factor of 2 (which was the approach chosen for this project). 
+As an example, during the first iteration of the process, the entire image is considered as the potential range. First, the size of the range is compared against the domain size. In this case it will not be small enough, so a domain cannot be mapped onto this range. Using partitioning, two new potential ranges are selected from the original one,and the process is repeated. Should a potential range be sufficiently small, it is compared with domains during the domain search phase. Such potential ranges will be subdivided further if no domain yields a computed difference smaller than a predefined threshold.
+
+## Algorithm
+
+### Encoding
+
+During the partitioning phase, each row and column of the potential range has an average value calculated: $avg_h = \sum_{i} r_{i,j}$ and $avg_v = \sum_{j} r_{i,j}$. On that basis the biased differences are computed (horizontal and vertical):
+<p align="center">
+  <img src="./imgs/doc/horizontal_biased_diff.png"/>
+</p>
+
+<p align="center">
+  <img src="./imgs/doc/vertical_biased_diff.png"/>
+</p>
+
+
+The optimal split is the one with the highest biased difference, whether horizontal or vertical.
+
+The domain search is very similar to the domain search in the quadtree method. The domains are searched for ranges starting from the largest to the smallest. The domains themselves are created according to a predefined domain size _d, and their centers are positioned on an equidistant lattice, _{d/2} pixels apart. As mentioned above, the chosen domain must be at least 2 times bigger than the range in both axes. The pixels of the domain are either subsampled or averaged in groups of 2x2. The square difference of the pixel values is compared against the predefined threshold. If it is smaller, the transformed domain is accepted. Otherwise, if no domain meets that requirement, the range is divided again (unless the range becomes smaller than the minimal size).
+
+### Storage
+
+The transformations are not stored directly, but instead defined by partitions. Each partition is defined by the following elements:
+* partition type (horizontal or vertical)
+* position (offset from the upper or left side)
+The partitions must be stored from top left to bottom right. 
+Alongside, the scaling and offset values are saved for each range. The domain is specified by an index to a list of all possible domains and the rotation type.
+
+###  Decoding
+
+The decoding algorithm is optimized by using a precomputed pointer array, that maps a domain pixel for each range pixel in the image. This is more time-efficient than scanning through the domain-range transformations. The subsampling or averaging of the domain pixels is an obstacle in this approach, which is solved by mapping the average of the four pixels to one range pixel. The scaling and offset information is stored only once per range, in a separate array. Having such structures, the decoding proceeds by taking each range pixel and apply the scale and offset to the averaged/subsampled pixels, and mapping the result onto the image. To obtain a better reconstruction, the decoding process should have multiple iterations.
+
 
 # Evaluation
 

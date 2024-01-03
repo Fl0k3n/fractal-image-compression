@@ -19,18 +19,30 @@ class HVEncoder:
 
     def encode(self) -> EncodedHvImage:
         res = EncodedHvImage(self.img.shape[1], self.img.shape[0])
-        res.domains = self.recursive_partitioning(self.img)
-        return res
+        res.domains = self.queue_partitioning(self.img)
+        return res  
     
-    def recursive_partitioning(self, img):
-        img_domain = self.domain_search(img)
-        if img_domain is not None:
-            return [img_domain]
-        P1, P2 = self.partition(img)
-        part1 = self.recursive_partitioning(P1)
-        part2 = self.recursive_partitioning(P2)
-        partitions = [*part1, *part2]
-        return partitions  
+    def queue_partitioning(self, first_img):
+        Queue = [first_img]
+        partitions = []
+        while len(Queue) > 0:
+            img = Queue.pop()
+            img_domain = self.domain_search(img)
+            if img_domain is not None:
+                partitions.append(img_domain)
+            else:
+                P1, P2 = self.partition(img)
+                p1_x, p1_y = P1.shape
+                p2_x, p2_y = P2.shape
+                p_sizes = [P1.shape[0], P2.shape[0], P1.shape[1], P2.shape[1]]
+                p_max = np.argmin(p_sizes)
+                if p_max % 2 == 0:
+                    Queue.append(P2)
+                    Queue.append(P1)
+                else:
+                    Queue.append(P1)
+                    Queue.append(P2)
+        return partitions
     
     def partition(self, image):
         N, M = len(image), len(image[0])

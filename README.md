@@ -268,7 +268,55 @@ During the partitioning phase, each row and column of the potential range has an
 
 The optimal split is the one with the highest biased difference, whether horizontal or vertical.
 
+The pseudocode for the partitioning function can be described as follows:
+```
+Partition(Range) -> (Range, Range):
+    v = array holding vertical biased differences
+    h = array holding horizontal biased differences
+    v_max, h_max = indices of maximal values of v and h
+    if h[h_max] > v[v_max]:
+        P1, P2 = new ranges split horizontally by index h_max
+    else:
+        P1, P2 = new ranges split vertically by index v_max
+    return P1, P2
+```
+
 The domain search is very similar to the domain search in the quadtree method. The domains are searched for ranges starting from the largest to the smallest. The domains themselves are created according to a predefined domain size _d, and their centers are positioned on an equidistant lattice, _{d/2} pixels apart. As mentioned above, the chosen domain must be at least 2 times bigger than the range in both axes. The pixels of the domain are either subsampled or averaged in groups of 2x2. The square difference of the pixel values is compared against the predefined threshold. If it is smaller, the transformed domain is accepted. Otherwise, if no domain meets that requirement, the range is divided again (unless the range becomes smaller than the minimal size).
+
+```
+DomainSearch(Range) -> Domain:
+    if Range.size > domainSize/2:
+        no domain found
+    else:
+        X = array of squared differences of subsampled(D) and Range for each possible domain D
+        D = domain that has the smallest value of x in X
+        x = squared difference value for D
+        if x < threshold:
+            return D
+        else:
+            no domain found
+```
+
+The abovementioned functions can be brought together to create the whole algorithm, the pseoudocode of which is as follows:
+
+```
+HVCoverImage(Image) -> list[Domain]:
+    Queue = queue that will store ranges from largest to smallest
+    domains = []
+    Queue.append(Image)  # the image is the first range
+    while Queue not empty:
+        range = Queue.pop()
+        domain = DomainSearch(range)
+        if domain exists:
+            domains.append(domain)
+        else:
+            P1, P2 = Partition(range)
+            if min_size(P1) < min_size(P2):
+                P1, P2 = P2, P1
+            Queue.append(P1)
+            Queue.append(P2)
+    return domains
+```
 
 ### Storage
 

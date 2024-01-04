@@ -11,12 +11,13 @@ class HVDecoder:
         self.strides = strides
 
     def decode(self, encoded_img: EncodedHvImage, iterations=32):
-        ranges, domains = self.pre_calculate(encoded_img)
+        ranges = encoded_img.ranges
         img = np.zeros((encoded_img.height, encoded_img.width), dtype=np.float32) 
         next_img = np.empty_like(img)
 
         for _ in range(iterations):
             for img_range in ranges:
+                domains = self.pre_calculate((encoded_img.height, encoded_img.width), (2*img_range.len_i, 2*img_range.len_j))
                 dom = domains[img_range.domain_idx]
                 range_i, range_j = img_range.start_i, img_range.start_j
                 size_i, size_j = img_range.len_i, img_range.len_j
@@ -31,7 +32,7 @@ class HVDecoder:
             img = next_img
         return img.astype(np.uint8)
     
-    def pre_calculate(self, encoded_img: EncodedHvImage):
+    def pre_calculate(self, img_shape, domain_shape):
         '''
         TODO:
         Based on range information, assign a domain pixel to each of the range pixels. 
@@ -39,9 +40,9 @@ class HVDecoder:
         scaling and offset are stored only once per range
         '''
         domains = []
-        for i in range(0, encoded_img.height - self.domain_size, self.strides[0]):
-            for j in range(0, encoded_img.width - self.domain_size, self.strides[1]):
+        for i in range(0, img_shape[0] - domain_shape[0], domain_shape[0]//2):
+            for j in range(0, img_shape[1] - domain_shape[1], domain_shape[1]//2):
                 domains.append(HvDomain(i, j))
-        return encoded_img.ranges, domains
+        return domains
 
 

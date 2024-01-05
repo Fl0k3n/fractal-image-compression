@@ -285,7 +285,7 @@ def _build_domain_list(img: np.ndarray, side: int, hstep: int, vstep: int) -> np
 @njit
 def _find_min_err_domain(img: np.ndarray, start_i: int, start_j: int, side: int,
          max_scale: np.float32, scale_bits: int, offset_bits: int, range_rot: int, range_orient: int,
-         candidate_domains: np.ndarray) -> tuple[int, int, int, int, np.float32, np.float32, np.float32, int, int]:
+         candidate_domains: np.ndarray) -> tuple[tuple[int, int, int, int, np.float32, np.float32, np.float32, int, int], np.float32]:
     best_error = np.inf
     best_domain = (0, 0, 0, 0, 0., 0., 0, 0)
     img_range = img[start_i:start_i + side, start_j:start_j + side].astype(np.float32)
@@ -309,7 +309,7 @@ def _find_min_err_domain(img: np.ndarray, start_i: int, start_j: int, side: int,
             domain_reordered = domain_reordered.T
 
         domain_subsampled = average_subsample_jit(domain_reordered)
-        error, scale_factor, offset_factor, quantized_scale_factor, quantized_offset_factor = _calc_rms_error(
+        error, scale_factor, offset_factor, quantized_scale_factor, quantized_offset_factor = _find_optimal_mean_square_error(
             domain_subsampled, img_range, max_scale, scale_bits, offset_bits, range_sum, np.sum(domain_subsampled),
             squared_range_sum, np.sum(domain_subsampled*domain_subsampled), img_range.shape[0]
         )
@@ -322,10 +322,10 @@ def _find_min_err_domain(img: np.ndarray, start_i: int, start_j: int, side: int,
     return best_domain, best_error
 
 @njit
-def _calc_rms_error(domain: np.ndarray, range_: np.ndarray, max_scale: np.float32,
+def _find_optimal_mean_square_error(domain: np.ndarray, range_: np.ndarray, max_scale: np.float32,
         scale_bits: int, offset_bits: int, range_sum: np.float32, domain_sum: np.float32,
         squared_range_sum: np.float32, squared_domain_sum: np.float32, range_size: int
-        ) -> tuple[np.float32, np.float32, np.float32]:
+        ) -> tuple[np.float32, np.float32, np.float32, int, int]:
     n = range_size * range_size
     ab_sum = np.sum(domain * range_)
     
@@ -340,22 +340,22 @@ def _calc_rms_error(domain: np.ndarray, range_: np.ndarray, max_scale: np.float3
     if s < -max_scale or s > max_scale:
         s = -max_scale
         o_left = 1. / n * (range_sum - s * domain_sum)
-        R_left, qs_left, qo_left = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
+        R_left, qs_left, qo_left = _calc_mean_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
                                      o_left, domain_sum, range_sum, max_scale, scale_bits, offset_bits)
         s = max_scale
         o = 1. / n * (range_sum - s * domain_sum)
-        R_right, qs_right, qo_right = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
+        R_right, qs_right, qo_right = _calc_mean_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
                                      o, domain_sum, range_sum, max_scale, scale_bits, offset_bits)
         if R_right < R_left:
             return R_right, s, o, qs_right, qo_right
         return R_left, -max_scale, o_left, qs_left, qo_left
     else:
-        R, qs, qo = _calc_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
+        R, qs, qo = _calc_mean_square_error(n, squared_range_sum, s, squared_domain_sum, ab_sum,
                              o, domain_sum, range_sum, max_scale, scale_bits, offset_bits)
         return R, s, o, qs, qo
 
 @njit
-def _calc_square_error(n: int, squared_range_sum: np.float32, s: np.float32, squared_domain_sum: np.float32,
+def _calc_mean_square_error(n: int, squared_range_sum: np.float32, s: np.float32, squared_domain_sum: np.float32,
                        ab_sum: np.float32, o: np.float32, domain_sum: np.float32, range_sum: np.float32,
                        max_scale: float, scale_bits: int, offset_bits: int) -> tuple[float, int, int]:
     # TODO positive-only-mode can have better precision using same scale_bits

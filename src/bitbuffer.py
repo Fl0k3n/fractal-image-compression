@@ -42,11 +42,11 @@ class BitBuffer:
             bits_to_read = bit_width - self.accumulated_size
             mask = (1 << self.accumulated_size) - 1
             res = (self.buff & mask) << bits_to_read
-            self.accumulated_size = self.MAX_BIT_WIDTH
             serialized = self.backing_buff.read(self.MAX_BYTE_WIDTH)
             if len(serialized) < self.MAX_BYTE_WIDTH:
                 return EOF
             self.buff = struct.unpack(f'{self.struct_byte_order}I', serialized)[0]
+            self.accumulated_size = self.MAX_BIT_WIDTH
         else:
             bits_to_read = bit_width
             

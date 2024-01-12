@@ -1,5 +1,5 @@
 import numpy as np
-from numba import njit
+# from numba import njit
 
 from hvv2.common import Domain, HVImage, HVNode, SplitInfo
 from quadtree.common import MAX_GRAY, EncodingInfo
@@ -94,7 +94,7 @@ class HVEncoder:
             quantized_offset=domain[7],
         ), err
 
-@njit
+# @njit
 def _run_domain_search(img: np.ndarray, i: int, j: int, width: int, height: int,
         scale_bits: int, offset_bits: int, max_scale: float) -> tuple[
             tuple[int, int, int, int, np.float32, np.float32, np.float32, int, int], np.float32
@@ -107,23 +107,25 @@ def _run_domain_search(img: np.ndarray, i: int, j: int, width: int, height: int,
 
     for domain_i in range(0, img.shape[0] - 2 * height, height):
         for domain_j in range(0, img.shape[1] - 2 * width, width):
-            # TODO rotations etc
-            img_domain = img[domain_i: domain_i+2*height, domain_j: domain_j+2*width].astype(np.float32)
-            domain_subsampled = average_subsample_jit(img_domain)
-            domain_sum = np.sum(domain_subsampled)
-            squared_domain_sum = np.sum(domain_subsampled * domain_subsampled)
-            error, scale_factor, offset_factor, quantized_scale_factor, quantized_offset_factor =  _find_optimal_mean_square_error(
-                domain_subsampled, img_range, max_scale, scale_bits, offset_bits, range_sum, domain_sum,
-                squared_range_sum, squared_domain_sum, width, height)
-            
-            if error < best_error:
-                best_error = error
-                best_domain = (domain_i, domain_j, 0, 0, # TODO
-                            scale_factor, offset_factor, quantized_scale_factor, quantized_offset_factor)
+            candidate_domain = img[domain_i: domain_i+2*height, domain_j: domain_j+2*width] #.astype(np.float32)
+            for orientation, oriented_domain in enumerate((candidate_domain, np.rot90(candidate_domain.T, 1))):
+                for rotation in [0, 2]:
+                    img_domain = np.rot90(oriented_domain, rotation).astype(np.float32)
+                    domain_subsampled = average_subsample_jit(img_domain)
+                    domain_sum = np.sum(domain_subsampled)
+                    squared_domain_sum = np.sum(domain_subsampled * domain_subsampled)
+                    error, scale_factor, offset_factor, quantized_scale_factor, quantized_offset_factor =  _find_optimal_mean_square_error(
+                        domain_subsampled, img_range, max_scale, scale_bits, offset_bits, range_sum, domain_sum,
+                        squared_range_sum, squared_domain_sum, width, height)
+                    
+                    if error < best_error:
+                        best_error = error
+                        best_domain = (domain_i, domain_j, orientation, rotation,
+                                    scale_factor, offset_factor, quantized_scale_factor, quantized_offset_factor)
                 
     return best_domain, best_error
 
-@njit
+# @njit
 def _find_optimal_mean_square_error(domain: np.ndarray, range_: np.ndarray, max_scale: np.float32,
         scale_bits: int, offset_bits: int, range_sum: np.float32, domain_sum: np.float32,
         squared_range_sum: np.float32, squared_domain_sum: np.float32, range_width: int, range_height: int
@@ -156,7 +158,7 @@ def _find_optimal_mean_square_error(domain: np.ndarray, range_: np.ndarray, max_
                              o, domain_sum, range_sum, max_scale, scale_bits, offset_bits)
         return R, s, o, qs, qo
     
-@njit
+# @njit
 def _calc_mean_square_error(n: int, squared_range_sum: np.float32, s: np.float32, squared_domain_sum: np.float32,
                        ab_sum: np.float32, o: np.float32, domain_sum: np.float32, range_sum: np.float32,
                        max_scale: float, scale_bits: int, offset_bits: int) -> tuple[float, int, int]:

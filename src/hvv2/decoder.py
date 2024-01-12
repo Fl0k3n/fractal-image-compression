@@ -73,6 +73,9 @@ class HVDecoder:
                     offset = dom.offset
 
                 dom_i = np.copy(self.img[dom.start_i:dom.start_i + height * 2, dom.start_j:dom.start_j + width * 2])
+                if dom.orientation == 1:
+                    dom_i = np.rot90(dom_i.T, 1)
+                dom_i = np.rot90(dom_i, dom.rotation)
                 dom_i = average_subsample_jit(dom_i) * scale + offset
 
                 self.next_img[range_i:range_i + height, range_j:range_j + width] = dom_i

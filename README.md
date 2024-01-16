@@ -126,6 +126,7 @@ Furthermore, since our job is to compress an image, we can't use too many transf
 
 What we described here is more of a meta-algorithm, multiple approaches of solving this problem exist, they focus particularly on the way in what the image is partitioned into regions. In the following sections we provide a detailed description of two algorithms: Quadtree and HV, we also provide their implementation and evaluation.
 
+
 # 2. Quadtree algorithm
 
 Quadtree algorithm uses a partitioning scheme that builds a tree where each non-leaf node has 4 children, hence the name quadtree. The implementation is available in <a href="./src/quadtree">./src/quadtree</a> directory, it depends only on numpy and numba libraries.
@@ -332,6 +333,27 @@ The decoding algorithm is optimized by using a precomputed pointer array, that m
 
 
 # Evaluation
+
+There are several criteria on which one can compare the results of the algorithms. Firstly, we can compare the original files and the compressed files, plus a jpeg file for reference:
+
+<p align="center">
+  <img src="./imgs/doc/output_hv_example_1_128.png"/>
+</p>
+This is the Quadtree algorithm result, and the following is the HV algorithm result:
+
+<p align="center">
+  <img src="./imgs/doc/output_quadtree_example_1.png"/>
+</p>
+
+As can be seen above, the compression of the quadtree algorithm is noticeably better.
+
+It is also possible to compare the encoding and decoding times, as well as the mean squared error of the compression:
+```
+
+```
+
+
+
 
 1. comparison (between uncompressed - jpeg - quadtree - hv) for few selected images (cauliflower, lena, something with mixed self similar and not same similar structure) 
 - display images for high fidelity parameters

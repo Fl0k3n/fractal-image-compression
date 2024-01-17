@@ -126,6 +126,32 @@ Furthermore, since our job is to compress an image, we can't use too many transf
 
 What we described here is more of a meta-algorithm, multiple approaches of solving this problem exist, they focus particularly on the way in what the image is partitioned into regions. In the following sections we provide a detailed description of two algorithms: Quadtree and HV, we also provide their implementation and evaluation.
 
+## 1.5 Bruteforce algorithm
+
+A a baseline for comparing the algorithms in our project we implemented a bruteforce algorithm for this problem. Its operation is very simple - it has a fixed range size and domain size, and for each range it loops through avaliable domains and its transformations, evaluates them based on the calculated RMS error, and chooses the top one. The main drawback of this method is that it is inflexible and relatively time-consuming.
+
+The pseudocode for this algorithm can be described as follows:
+```
+def encode(image):
+    result_domains = []
+    for current_range in image:
+        best_domain = best_domain(current_range)
+        result_domains.append(best_domain)
+    return result_domains
+
+def best_domain(range):
+    for domain in image:
+        for orientation in domain_orientations:
+            for rotation in domain_rotations:
+                transformed_domain = orientation(rotation(domain))
+                RMS = rms_error(transformed_domain, range)
+                if RMS < best_rms_value:
+                    best_rms_value = RMS
+                    best_domain = transformed_domain
+    return best_domain
+```
+
+
 
 # 2. Quadtree algorithm
 
@@ -337,20 +363,47 @@ The decoding algorithm is optimized by using a precomputed pointer array, that m
 There are several criteria on which one can compare the results of the algorithms. Firstly, we can compare the original files and the compressed files, plus a jpeg file for reference:
 
 <p align="center">
-  <img src="./imgs/doc/output_hv_example_1_128.png"/>
+  <img src="./imgs/doc/output_quadtree_example_1.png"/>
 </p>
 This is the Quadtree algorithm result, and the following is the HV algorithm result:
 
 <p align="center">
-  <img src="./imgs/doc/output_quadtree_example_1.png"/>
+  <img src="./imgs/doc/output_hv_example_1_128.png"/>
 </p>
 
 As can be seen above, the compression of the quadtree algorithm is noticeably better.
+The bruteforce algorithm produces the following compression:
 
-It is also possible to compare the encoding and decoding times, as well as the mean squared error of the compression:
+<p align="center">
+  <img src="./imgs/doc/output_bruteforce_example_1.png"/>
+</p>
+
+
+It is also possible to compare the encoding and decoding times, as well as other metrics of the compression:
+
 ```
 
+Averaged Metrics for 10 runs for cauliflower image 128x128:
+
+           | Encoding time | Decoding time | Squared error | MSE           | PNSR          |
+-----------|---------------|---------------|---------------|---------------|---------------|
+BRUTEFORCE |               |               |               |               |               |
+-----------|---------------|---------------|---------------|---------------|---------------|
+QUADTREE   |               |               |               |               |               | 
+-----------|---------------|---------------|---------------|---------------|---------------|
+HV         |    2151.4s    |    0.7739s    |    613.78     |    0.0375     |     38.329    |
+-----------|---------------|---------------|---------------|---------------|---------------|
+JPEG       |    0.0001s    |    0.0001s    |    541.41     |    0.0332     |     38.874    |
+-----------|---------------|---------------|---------------|---------------|---------------|
+
 ```
+
+Squared error is calculated as the sum of the squares of the differences between every pixel in the original image and the corresponding pixel in the decoded image.
+
+MSE, mean square error, is the value of the square error divided by the number of pixels.
+
+PNSR, Peak Noise to Signal Ratio, is measured as 10 * log<sub>10</sub>(MAX_PIXEL_VALUE / MSE).
+
 
 
 

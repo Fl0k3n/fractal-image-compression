@@ -49,7 +49,7 @@ $$
 w_i \begin{bmatrix} x \\\ y \end{bmatrix} = \begin{bmatrix} a_i & b_i \\\ c_i & d_i \end{bmatrix} \begin{bmatrix} x \\\ y \end{bmatrix} + \begin{bmatrix} e_i \\\ f_i \end{bmatrix}
 $$
 
-Single operation performed by the copy machine can then be expressed as an iterated function system (IFS) $W$, which consists of a collection of transformations $ \set{ w_i : \mathbb{R}^2 \to \mathbb{R}^2 | i = 1, ..., n} $, defined as:
+Single operation performed by the copy machine can then be expressed as an iterated function system (IFS) $W$, which consists of a collection of transformations $\set{ w_i : \mathbb{R}^2 \to \mathbb{R}^2 | i = 1, ..., n}$, defined as:
 
 $$
 W\begin{bmatrix} x \\\ y \end{bmatrix} = \bigcup_{i=1}^n w_i\begin{bmatrix} x \\\ y \end{bmatrix} 
@@ -61,9 +61,9 @@ Intuitively, the limitation of using only contractive transformations is due to 
 
 Formally, this limitation is founded by the <a href="https://en.wikipedia.org/wiki/Banach_fixed-point_theorem">Banach fixed-point theorem</a>, which states that given a contractive mapping $W$ on a set of images, there exists a special image, called the attractor $x_w$, with the following properties:
 - Application of $W$ to the attractor yields the attractor itself, that is, $W(x_w) = x_w$. Attractor $x_w$ is called the fixed point of $W$.
-- Let $S_0$ be the initial image and let $S_k = W^k(S_0)$ denote the k'th application of map $W$ on the output it previously produced, starting with $S_0$, so $S_k = W(W(...^{k-3\ times}(W(S_0))))$. Then the attractor, which is a result of running the copying machine in a feedback loop, is the limit set:
-    $$ x_w = S_{\infty} = \lim_{n\to \infty} W^n(S_0) $$
-   that doesn't depend on the choice of the initial image $S_0$.
+- Let $S_0$ be the initial image and let $S_k = W^k(S_0)$ denote the k'th application of map $W$ on the output it previously produced, starting with $S_0$, so $S_k = W(W(...^{k-3\ times}(W(S_0))))$. Then the attractor, which is a result of running the copying machine in a feedback loop, is the limit set: 
+    $$x_w = S_{\infty} = \lim_{n\to \infty} W^n(S_0)$$
+    that doesn't depend on the choice of the initial image $S_0$.
 - $x_w$ is unique.
 
 What this means is that we can choose a set of contractive maps $W$, take any initial image, apply it in a feedback loop and obtain a unique image that is the attractor for the chosen $W$. 
@@ -83,7 +83,7 @@ The copy machine defined above operated on entire images and it was limited to b
 So, now the mathematical definition of a single copy operation that applies to some part of an image can be written as:
 
 $$
-w_i \begin{bmatrix} x \\\ y \\ z \end{bmatrix} = \begin{bmatrix} a_i & b_i & 0 \\\ c_i & d_i & 0 \\\ 0 & 0 & s_i \end{bmatrix} \begin{bmatrix} x \\\ y \\\ z \end{bmatrix} + \begin{bmatrix} e_i \\\ f_i \\\ o_i \end{bmatrix}
+w_i \begin{bmatrix} x \\\ y \\\ z \end{bmatrix} = \begin{bmatrix} a_i & b_i & 0 \\\ c_i & d_i & 0 \\\ 0 & 0 & s_i \end{bmatrix} \begin{bmatrix} x \\\ y \\\ z \end{bmatrix} + \begin{bmatrix} e_i \\\ f_i \\\ o_i \end{bmatrix}
 $$
 
 Where third dimention denotes brightness of an image (we limit ourselves to grayscale images, color channels can be handled in the same way) and thus $s_i$ denotes the contrast adjustment and $o_i$ denotes the brightness adjustment.
@@ -91,7 +91,7 @@ Where third dimention denotes brightness of an image (we limit ourselves to gray
 And to handle this masking, where different transforms are applied to different parts of the original image we use a mathematical model of a partitioned iterated function system (PIFS). We denote a portion of the image that is passed to this new copy machine as $D_i$ (i'th Domain), and a portion of the new image that the machine produces from this domain as $R_i$ (i'th Range). Transformation is applied to whole $D_i$ by the map $w_i$. With this notation PIFS can be described in almost the exact same way as IFS:
 
 $$
-W\begin{bmatrix} x \\\ y \\ z\end{bmatrix} = \bigcup_{i=1}^n w_i\begin{bmatrix} x \\\ y \\\ z \end{bmatrix} 
+W\begin{bmatrix} x \\\ y \\\ z\end{bmatrix} = \bigcup_{i=1}^n w_i\begin{bmatrix} x \\\ y \\\ z \end{bmatrix} 
 $$
 
 In order to have the machine produce an image of the same dimensions we need to cover the entire 2d image, that is, for each image pixel there must exist exactly one range $R_i$ that covers it. Machine can be run in a feedback loop just as before, similarly for PIFS, the attractor can be defined as an image $f$ such that $W(f) = f$.
@@ -132,23 +132,27 @@ A a baseline for comparing the algorithms in our project we implemented a brutef
 
 The pseudocode for this algorithm can be described as follows:
 ```
-def encode(image):
-    result_domains = []
-    for current_range in image:
-        best_domain = best_domain(current_range)
-        result_domains.append(best_domain)
-    return result_domains
+1. Encode(image):
+2.     ranges = divide image into subimages of fixed size (m, m)
+3.     result_domains = []
+4.     for range in ranges:
+5.         best_domain = Find_best_domain(range)
+6.         add best_domain to result_domains
+7.     return result_domains
 
-def best_domain(range):
-    for domain in image:
-        for orientation in domain_orientations:
-            for rotation in domain_rotations:
-                transformed_domain = orientation(rotation(domain))
-                RMS = rms_error(transformed_domain, range)
-                if RMS < best_rms_value:
-                    best_rms_value = RMS
-                    best_domain = transformed_domain
-    return best_domain
+8. Find_best_domain(range):
+9.     possible_domains = divide image into subimages of fixed size (2m, 2m)
+10.    add transposition of each domain into possible_domains
+11.    add all four 90 degree rotations of each domain into possible_domains
+12.    best_domain_info = None
+13.
+14.    for domain in possible_domains:
+15.        subsampled_domain = subsample 2x2 pixel groups of domain
+16.         RMS = calculate RMS error between subsampled_domain and range
+17.         if RMS < best_RMS:
+18.             best_RMS = RMS
+19.             best_domain_info = domain identifier, rotation and transposition info
+20.     return best_domain_info
 ```
 
 
@@ -171,7 +175,7 @@ $$d_{rms}(R, D) = \sqrt{\frac{1}{wh}\sum_{0\le k \lt w} \sum_{0\le m \lt h} (f(i
 
 Where $s$ is the contrast scaling factor, and $o$ is the brightness adjustment, as defined in section 1.2. To find $s$ and $o$ factors that minimize $d_{rms}$ for chosen subimages $R$ and $D$, we solve:
 
-$$\begin{cases} \frac{\partial d_{rms}}{\partial s} = 0 \\ \frac{\partial d_{rms}}{\partial o} = 0 \\ |s| < 1 \end{cases}$$
+$$\begin{cases} \frac{\partial d_{rms}}{\partial s} = 0 \\\ \frac{\partial d_{rms}}{\partial o} = 0 \\\ |s| < 1 \end{cases}$$
 
 Note that:
 - by selecing $(i_D, j_D)$ that maps to chosen $(i_R, j_R)$ we specify the translation factor of map $w_i$ defined in section 1.3, since it effectively moves one part of the image into another inside the copy,
@@ -263,7 +267,7 @@ Once we do this, during encoding we can search only domains from the class of th
 
 We should also note that this algorithm is trivially parallelizable, so the theoretical complexity doesn't need to be that daunting. We provide only the sequential implementation.
 
-The complexity of decoding is $O(N)$ with usually a small constant (~10).
+The complexity of decoding is $O(N)$ with usually a small numer of iterations (~10).
 
 ## 2.3 Encoding and postprocessing
 
@@ -273,25 +277,28 @@ For the first four dimensions of leaf values we construct a separete Huffman tre
 
 After decoding the image we perform a simple filtering operation to reduce blocking artifacts caused by independace of encoded subimages. For each boundary of a subimage we compute a weighted average of brightness values across that boundary.
 
+## 2.4 Decoding showcase
 
-# HV algorithm
+Animations below show decoding process for cauliflower and lena images. Decoding starts with a random noise and iteratively reconstructs original image. Single animation frame consists of 100 and 250 decoded domains respectively. Animations show 5 decoding iterations, further iterations may result in slightly better results, postprocessing is not applied.
+
+Cauliflower 128x128             |  Lena 256x256
+:-------------------------:|:-------------------------:
+![](/imgs/doc/kalafior_128.gif)  |  ![](./imgs/doc/lena_256.gif)
+
+# 3. HV algorithm
 
 The HV Encoding Scheme is unique in its approach to partition the image. At its core, it repeats two basic functions: recursive partitioning and domain search. The goal of partitioning is to fincd non-overlapping ranges of the image, whereas domain search determines the mapping of a domain onto each range. This scheme requires for the domains to always be larger than the ranges by at least a factor of 2 (which was the approach chosen for this project). 
 As an example, during the first iteration of the process, the entire image is considered as the potential range. First, the size of the range is compared against the domain size. In this case it will not be small enough, so a domain cannot be mapped onto this range. Using partitioning, two new potential ranges are selected from the original one,and the process is repeated. Should a potential range be sufficiently small, it is compared with domains during the domain search phase. Such potential ranges will be subdivided further if no domain yields a computed difference smaller than a predefined threshold.
 
-## Algorithm
+## 3.1 Algorithm
 
-### Encoding
+### 3.1.1 Encoding
 
 During the partitioning phase, each row and column of the potential range has an average value calculated: $avg_h = \sum_{i} r_{i,j}$ and $avg_v = \sum_{j} r_{i,j}$. On that basis the biased differences are computed (horizontal and vertical):
-<p align="center">
-  <img src="./imgs/doc/horizontal_biased_diff.png"/>
-</p>
 
-<p align="center">
-  <img src="./imgs/doc/vertical_biased_diff.png"/>
-</p>
+$$h_j = \frac{min(j, M - j - 1)}{M - 1}(\sum_ir_{i, j} - \sum_ir_{i,j+1})$$
 
+$$v_i = \frac{min(i, N - i - 1)}{N - 1}(\sum_jr_{i, j} - \sum_jr_{i+1,j})$$
 
 The optimal split is the one with the highest biased difference, whether horizontal or vertical.
 
@@ -345,7 +352,7 @@ HVCoverImage(Image) -> list[Domain]:
     return domains
 ```
 
-### Storage
+### 3.1.2 Storage
 
 The transformations are not stored directly, but instead defined by partitions. Each partition is defined by the following elements:
 * partition type (horizontal or vertical)
@@ -353,12 +360,12 @@ The transformations are not stored directly, but instead defined by partitions. 
 The partitions must be stored from top left to bottom right. 
 Alongside, the scaling and offset values are saved for each range. The domain is specified by an index to a list of all possible domains and the rotation type.
 
-###  Decoding
+### 3.1.3 Decoding
 
 The decoding algorithm is optimized by using a precomputed pointer array, that maps a domain pixel for each range pixel in the image. This is more time-efficient than scanning through the domain-range transformations. The subsampling or averaging of the domain pixels is an obstacle in this approach, which is solved by mapping the average of the four pixels to one range pixel. The scaling and offset information is stored only once per range, in a separate array. Having such structures, the decoding proceeds by taking each range pixel and apply the scale and offset to the averaged/subsampled pixels, and mapping the result onto the image. To obtain a better reconstruction, the decoding process should have multiple iterations.
 
 
-# Evaluation
+# 4. Evaluation
 
 There are several criteria on which one can compare the results of the algorithms. Firstly, we can compare the original files and the compressed files, plus a jpeg file for reference:
 

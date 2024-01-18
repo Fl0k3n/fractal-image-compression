@@ -1,4 +1,5 @@
 from collections import deque
+from typing import Callable
 
 import numpy as np
 
@@ -11,7 +12,8 @@ AUTO = -1
 
 class QuadtreeDecoder:
     def __init__(self, iterations: int = AUTO, stop_on_relative_error: float = 5e-3,
-               min_iterations=2, max_iterations=10, log_stop=False) -> None:
+               min_iterations=2, max_iterations=10, log_stop=False,
+               on_domain_decoded: Callable[[np.ndarray, int], None]=None) -> None:
         self.iterations = iterations
         self.stop_on_relative_error = stop_on_relative_error
         self.min_iterations = min_iterations
@@ -22,6 +24,8 @@ class QuadtreeDecoder:
         self.next_img: np.ndarray = None
 
         self.use_quantized_values = True
+        self.on_domain_decoded = on_domain_decoded
+        self.decoded_counter = 0
 
     def using_not_quantized_values(self) -> "QuadtreeDecoder":
         self.use_quantized_values = False
@@ -101,6 +105,9 @@ class QuadtreeDecoder:
                 dom_i = average_subsample(dom_i) * scale + offset
 
                 self.next_img[range_i:range_i + size, range_j:range_j + size] = dom_i
+                if self.on_domain_decoded is not None:
+                    self.decoded_counter += 1
+                    self.on_domain_decoded(self.next_img, self.decoded_counter)
             else:
                 newsize = size // 2
                 queue.append((cur.children[0], depth + 1, range_i, range_j))

@@ -1,5 +1,5 @@
 import numpy as np
-# from numba import njit
+from numba import njit
 
 from hvv2.common import Domain, HVImage, HVNode, SplitInfo
 from quadtree.common import MAX_GRAY, EncodingInfo
@@ -94,7 +94,7 @@ class HVEncoder:
             quantized_offset=domain[7],
         ), err
 
-# @njit
+@njit
 def _run_domain_search(img: np.ndarray, i: int, j: int, width: int, height: int,
         scale_bits: int, offset_bits: int, max_scale: float) -> tuple[
             tuple[int, int, int, int, np.float32, np.float32, np.float32, int, int], np.float32
@@ -125,7 +125,7 @@ def _run_domain_search(img: np.ndarray, i: int, j: int, width: int, height: int,
                 
     return best_domain, best_error
 
-# @njit
+@njit
 def _find_optimal_mean_square_error(domain: np.ndarray, range_: np.ndarray, max_scale: np.float32,
         scale_bits: int, offset_bits: int, range_sum: np.float32, domain_sum: np.float32,
         squared_range_sum: np.float32, squared_domain_sum: np.float32, range_width: int, range_height: int
@@ -158,7 +158,7 @@ def _find_optimal_mean_square_error(domain: np.ndarray, range_: np.ndarray, max_
                              o, domain_sum, range_sum, max_scale, scale_bits, offset_bits)
         return R, s, o, qs, qo
     
-# @njit
+@njit
 def _calc_mean_square_error(n: int, squared_range_sum: np.float32, s: np.float32, squared_domain_sum: np.float32,
                        ab_sum: np.float32, o: np.float32, domain_sum: np.float32, range_sum: np.float32,
                        max_scale: float, scale_bits: int, offset_bits: int) -> tuple[float, int, int]:

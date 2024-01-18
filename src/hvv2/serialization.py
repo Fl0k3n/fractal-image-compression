@@ -113,7 +113,7 @@ class HVSerializer:
                 buff.write(*self.entropy_processor.encode(dom.start_i, CodingDimension.DOMAIN_ROW))
                 buff.write(*self.entropy_processor.encode(dom.start_j, CodingDimension.DOMAIN_COL))
                 buff.write(dom.orientation, 1)
-                buff.write(dom.rotation, 2)
+                buff.write(dom.rotation // 2, 1)
                 buff.write(*self.entropy_processor.encode(dom.quantized_scale, CodingDimension.SCALE))
                 buff.write(*self.entropy_processor.encode(dom.quantized_offset, CodingDimension.OFFSET))
             else:
@@ -193,7 +193,7 @@ class HVDeserializer:
                 start_i = self.entropy_processor.decode(buff, CodingDimension.DOMAIN_ROW)
                 start_j = self.entropy_processor.decode(buff, CodingDimension.DOMAIN_COL)
                 orientation = buff.read(1)
-                rotation = buff.read(2)
+                rotation = buff.read(1) * 2
                 quantized_scale = self.entropy_processor.decode(buff, CodingDimension.SCALE)
                 quantized_offset = self.entropy_processor.decode(buff, CodingDimension.OFFSET)
                 node = HVNode.Leaf(Domain(

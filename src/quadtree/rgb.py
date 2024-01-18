@@ -6,6 +6,7 @@ import numpy as np
 from quadtree.common import ColoredQuadtreeImage
 from quadtree.decoder import QuadtreeDecoder
 from quadtree.encoder import QuadtreeEncoder
+from quadtree.postprocessing import QuadtreePostprocessor
 from quadtree.serialization import QuadtreeDeserializer, QuadtreeSerializer
 from utils import ChromaSubsampling, rgb_to_ycbcr, ycbcr_to_rgb
 
@@ -31,10 +32,10 @@ class RGBQuadtreeDecoder:
         self.cb_decoder = cb_decoder if cb_decoder is not None else y_decoder
         self.cr_decoder = cr_decoder if cr_decoder is not None else self.cb_decoder
 
-    def decode(self, colored_img: ColoredQuadtreeImage) -> np.ndarray:
-        y = self.y_decoder.decode(colored_img.encoded_Y)
-        cb = self.cb_decoder.decode(colored_img.encoded_Cb)
-        cr = self.cr_decoder.decode(colored_img.encoded_Cr)
+    def decode(self, colored_img: ColoredQuadtreeImage, dimension_posprocessor: QuadtreePostprocessor = None) -> np.ndarray:
+        y = self.y_decoder.decode(colored_img.encoded_Y, dimension_posprocessor)
+        cb = self.cb_decoder.decode(colored_img.encoded_Cb, dimension_posprocessor)
+        cr = self.cr_decoder.decode(colored_img.encoded_Cr, dimension_posprocessor)
         subsampling: ChromaSubsampling
         if y.shape == cb.shape == cr.shape:
             subsampling = "4:4:4"

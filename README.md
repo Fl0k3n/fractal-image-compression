@@ -24,12 +24,14 @@ One way of constructing fractals is to use the abstraction of a copy machine. Im
 
 <p align="center">
   <img src="./imgs/doc/copy-machine.png"/>
+   <em>source: Fractal Image Compression: Theory and Application, Y. Fisher</em>
 </p>
 
 We can use this machine multiple times on the image that it outputted previously. Figure below illustrates what happens when we apply the machine multiple times to different initial images.
 
 <p align="center">
   <img src="./imgs/doc/iterated-copy-machine.png"/>
+  <em>source: Fractal Image Compression: Theory and Application, Y. Fisher</em>
 </p>
 
 We can notice two things:
@@ -148,10 +150,10 @@ The pseudocode for this algorithm can be described as follows:
 13.
 14.    for domain in possible_domains:
 15.        subsampled_domain = subsample 2x2 pixel groups of domain
-16.         RMS = calculate RMS error between subsampled_domain and range
-17.         if RMS < best_RMS:
-18.             best_RMS = RMS
-19.             best_domain_info = domain identifier, rotation and transposition info
+16.        RMS = calculate RMS error between subsampled_domain and range
+17.        if RMS < best_RMS:
+18.            best_RMS = RMS
+19.            best_domain_info = domain identifier, rotation and transposition info
 20.     return best_domain_info
 ```
 
@@ -190,7 +192,10 @@ We now need to specify the way to partition the original image into regions. Ass
 
 <p align="center">
   <img src="./imgs/doc/quadtree_partitioning.png"/>
+  <br/>
+  <em>source: Fractal Image Compression: Theory and Application, Y. Fisher</em>
 </p>
+
 
 The pseudocode for the encoding algorithm is as follows, assume that ϵ, min_splits, max_splits are known hyperparameters, f is the image and depth is an integer value starting at 0:
 
@@ -367,66 +372,80 @@ The decoding algorithm is optimized by using a precomputed pointer array, that m
 
 # 4. Evaluation
 
-There are several criteria on which one can compare the results of the algorithms. Firstly, we can compare the original files and the compressed files, plus a jpeg file for reference:
+Full evaluation scripts and more results can be found in the notebook: <a href="./src/testing.ipynb">./src/testing.ipynb</a>.
+
+## 4.1 Encoding comparison
+
+We evaluate Quadtree and HV algorithms and we compare them with modern JPEG implementation based on a wavelet transform (from Pillow library). We perform comparison on three different images with differerent self-similarity magnitudes.
+
+### 4.1.1 High fidelity parameters
+
+By high fidelity, we mean the parameters that result in decreasing resulting image size (compression > 1) and obtaining the best possible PSNR. Compression ratios of 1 are obviously impractical, but we want to have a view of what is the best quality we can get using these algorithms. Note that cauliflower exhibits high self-similarity, but at very small scales that require using very small range sizes, which results in low compression. Lena, on the other hand, contains many uniform regions that can be covered with bigger ranges.
+
+![](./imgs/doc/eval_high_fidelity_kalafior.png)
+![](./imgs/doc/eval_high_fidelity_lena.png)
+![](./imgs/doc/eval_high_fidelity_forest.png)
+
+### 4.1.2 High compression parameters
+
+By high compresion, we mean the parameters that result in recognizable images with significantly decreased sizes. Note that much higher compressions are possible (which we demonstrate in subsequent sections), but here we picked some reasonable PSNR/compresion ratios. We selected the parameters such that compression ratios of Quadtree and HV are similar, and we compare their encoding qualities.
+
+
+![](./imgs/doc/eval_high_compression_kalafior.png)
+![](./imgs/doc/eval_high_compression_lena.png)
+![](./imgs/doc/eval_high_compression_forest.png)
+
+We can notice that HV has much better PSNR than Quadree for the same compression ratios.
+
+
+## 4.2 Quadtree
+
+We now provide more detailed evaluation of the quadtree algorithm. The plot below illustrates how the quality of the image changes with decoding iterations, we can notice that after about 8 iterations image converges to the attractor.
+
+![](./imgs/doc/eval_quadtree_iterations.png)
+
+The image below illustrates an example of how quadtree divedes an image into subimages, we can see that more uniform regions were covered by bigger ranges.
 
 <p align="center">
-  <img src="./imgs/doc/output_quadtree_example_1.png"/>
-</p>
-This is the Quadtree algorithm result, and the following is the HV algorithm result:
-
-<p align="center">
-  <img src="./imgs/doc/output_hv_example_1_128.png"/>
+  <img src="./imgs/doc/eval_quadtree_ranges.png"/>
 </p>
 
-As can be seen above, the compression of the quadtree algorithm is noticeably better.
-The bruteforce algorithm produces the following compression:
-
-<p align="center">
-  <img src="./imgs/doc/output_bruteforce_example_1.png"/>
-</p>
-
-
-It is also possible to compare the encoding and decoding times, as well as other metrics of the compression:
-
-```
-
-Averaged Metrics for 10 runs for cauliflower image 128x128:
-
-           | Encoding time | Decoding time | Squared error | MSE           | PNSR          |
------------|---------------|---------------|---------------|---------------|---------------|
-BRUTEFORCE |    26.602s    |    0.2029s    |    1490.6     |    0.091      |     34.476    |
------------|---------------|---------------|---------------|---------------|---------------|
-QUADTREE   |    3.2794s    |    0.8176s    |    2023.5     |    0.1235     |     33.148    | 
------------|---------------|---------------|---------------|---------------|---------------|
-HV         |    2151.4s    |    0.7739s    |    613.78     |    0.0375     |     38.329    |
------------|---------------|---------------|---------------|---------------|---------------|
-JPEG       |    0.0001s    |    0.0001s    |    541.41     |    0.0332     |     38.874    |
------------|---------------|---------------|---------------|---------------|---------------|
-
-```
-
-Squared error is calculated as the sum of the squares of the differences between every pixel in the original image and the corresponding pixel in the decoded image.
-
-MSE, mean square error, is the value of the square error divided by the number of pixels.
-
-PNSR, Peak Noise to Signal Ratio, is measured as 10 * log<sub>10</sub>(MAX_PIXEL_VALUE / MSE).
-
-As can be seen from the table above, the current jpeg compression algorithm is by far the fastest. The HV algorithm could compete with it in terms of quality of the compression, but the algorithm is far too slow to be a serious contender. From all implemented algorithms, the Quadtree compression looks like the most optimal choice.
+Plots below show compression ratios by psnr for different encoding parameters, we can change the following parameters:
+- minimum range size (to how small subimages can quadtree divide original image)
+- maximum range size (for how big subimage can quadtree start searching domains)
+- number of bits for quantization of scaling and offset factors
+- error tolerance (if RMS error is smaller than this value we don't divide images further)
+- whether we apply Huffman entropy encoding or not
 
 
+We can notice a few clouds of points, the main parameter that groups them is the minimum range size, the lower it is, the smaller subimages we can use, which results in higher quality and lower compression. We can also see that Huffman coding improves the compression ratio significantly. Interactive results that label each point with its parameters can be viewed in the notebook. 
+
+![](/imgs/doc/eval_quadtree_no_entropy.png) 
+![](/imgs/doc/eval_quadtree_entropy.png)
+![](/imgs/doc/eval_lena_no_entropy.png)
+![](/imgs/doc/eval_lena_entropy.png)
 
 
+We have also implemented Quadtree compression for RGB images. First we convert to YCbCr color space, then we encode each dimension with separate Quadtree, we also use 4:2:2 chroma subsampling. The results for Lena 512x512 for high fidelity (42 psnr, 10 compression ratio) and high compression (40 psnr, 80 compression ratio) are shown below.
 
-1. comparison (between uncompressed - jpeg - quadtree - hv) for few selected images (cauliflower, lena, something with mixed self similar and not same similar structure) 
-- display images for high fidelity parameters
-- display images for high compression parameters 
+![](./imgs/doc/eval_lena_high_fidelity.png)
+![](./imgs/doc/eval_lena_high_compression.png)
 
-2. Quadtree
-- psnr(decoding iteration) plot
-- compression_rate(psnr) plot for selected parameters
 
-3. HV, same as above
+The plot below shows compression ratio by psnr for different parameters for colored Lena 512x512 image. JPEG gave 46 psnr and 20 compression ratio. Very high compression ratios (~150) are achievable, but for reasonable results (>41 psnr) the compression ratio is about 10.
 
+![](./imgs/doc/eval_lena_rgb.png)
+
+## 4.3 HV
+
+Plot below show compression ratios by psnr for different encoding parameters, again, the most important parameter is minimum range size, another important one is error tolerance. In contrast to Quadtree this algorithm can reach high encoding qualities due to its increased flexibility. Hovever, it still can't beat JPEG even for highly self-similar images.
+
+![](./imgs/doc/eval_hv.png)
+
+
+# 5. Summary
+
+We implemented two fractal compression algorithms from scratch. Results, in terms of encoding quality, compression ratio and encoding time, are far worse than those of modern JPEG implementations. Nevertheless, in our opinion the fractal compression scheme is more interesting than JPEG. We initially found it surprising that iterative application of the same contractive affine transformations on any image can always produce the same high quality, compressed image.
 
 # References
 

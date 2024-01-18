@@ -387,9 +387,9 @@ Averaged Metrics for 10 runs for cauliflower image 128x128:
 
            | Encoding time | Decoding time | Squared error | MSE           | PNSR          |
 -----------|---------------|---------------|---------------|---------------|---------------|
-BRUTEFORCE |               |               |               |               |               |
+BRUTEFORCE |    26.602s    |    0.2029s    |    1490.6     |    0.091      |     34.476    |
 -----------|---------------|---------------|---------------|---------------|---------------|
-QUADTREE   |               |               |               |               |               | 
+QUADTREE   |    3.2794s    |    0.8176s    |    2023.5     |    0.1235     |     33.148    | 
 -----------|---------------|---------------|---------------|---------------|---------------|
 HV         |    2151.4s    |    0.7739s    |    613.78     |    0.0375     |     38.329    |
 -----------|---------------|---------------|---------------|---------------|---------------|
@@ -403,6 +403,8 @@ Squared error is calculated as the sum of the squares of the differences between
 MSE, mean square error, is the value of the square error divided by the number of pixels.
 
 PNSR, Peak Noise to Signal Ratio, is measured as 10 * log<sub>10</sub>(MAX_PIXEL_VALUE / MSE).
+
+As can be seen from the table above, the current jpeg compression algorithm is by far the fastest. The HV algorithm could compete with it in terms of quality of the compression, but the algorithm is far too slow to be a serious contender. From all implemented algorithms, the Quadtree compression looks like the most optimal choice.
 
 
 

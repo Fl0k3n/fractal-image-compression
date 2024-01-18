@@ -14,7 +14,7 @@ def average_subsample(arr: np.ndarray) -> np.ndarray:
     """ Divides arr into 2x2 squares and averages them
 
     Args:
-        arr (np.ndarray): 2d square matrix, dtype should fit 4*255
+        arr (np.ndarray): 2d square matrix
 
     Returns:
         np.ndarray: subsampled 2d square matrix, dtype float32

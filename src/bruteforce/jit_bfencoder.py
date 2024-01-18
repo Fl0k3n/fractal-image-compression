@@ -1,7 +1,7 @@
 import numpy as np
 from numba import int32, njit
 
-from model import Domain, EncodedImage
+from bruteforce.model import Domain, EncodedImage
 from utils import average_subsample_jit
 
 

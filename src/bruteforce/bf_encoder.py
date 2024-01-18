@@ -1,6 +1,6 @@
 import numpy as np
 
-from model import Domain, EncodedImage
+from bruteforce.model import Domain, EncodedImage
 from utils import average_subsample
 
 
